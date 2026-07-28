@@ -179,6 +179,7 @@
       <button data-cam="3" class="on">🎥 三人称</button>
       <button data-cam="1">👤 一人称</button>
     </div>
+    <button class="tb" id="snd" title="音のオン・オフ（Mキー）">🔊 音あり</button>
   </div>
   <div class="ov" id="warn"></div>
   <div class="ov" id="hud">
@@ -658,6 +659,105 @@ cv.addEventListener("touchmove",e=>{
 cv.addEventListener("touchend",()=>pinch=null);
 
 /* =========================================================================
+   5.5 音（Web Audio API でその場で合成。音声ファイルは使わない）
+   ========================================================================= */
+const Snd = {
+  ctx:null, on:true, ready:false,
+  dist:0, nextChain:0, nextJoint:0,
+  // ブラウザの制限で、音は「ユーザーが押したとき」にしか作れない
+  init(){
+    if(this.ctx) return;
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC) return;
+    try{
+      const c=new AC(); this.ctx=c;
+      this.master=c.createGain(); this.master.gain.value=this.on?0.85:0;
+      this.master.connect(c.destination);
+      // ノイズのもと（2秒ぶん）。走行音・風・ブレーキはこれを加工して作る
+      const n=Math.floor(2*c.sampleRate), buf=c.createBuffer(1,n,c.sampleRate), d=buf.getChannelData(0);
+      for(let i=0;i<n;i++) d[i]=Math.random()*2-1;
+      this.noise=buf;
+      const chan=(type,freq,q)=>{
+        const src=c.createBufferSource(); src.buffer=buf; src.loop=true;
+        const f=c.createBiquadFilter(); f.type=type; f.frequency.value=freq; if(q) f.Q.value=q;
+        const g=c.createGain(); g.gain.value=0;
+        src.connect(f); f.connect(g); g.connect(this.master); src.start();
+        return {f,g};
+      };
+      this.roll  = chan("lowpass", 300);      // 車輪がレールを走るゴーッという音
+      this.wind  = chan("highpass",1400);     // 風を切る音
+      this.brake = chan("bandpass",2600,1.2); // ブレーキのシューッという音
+      this.ready=true;
+    }catch(e){ this.ctx=null; }
+  },
+  setOn(v){
+    this.on=v;
+    if(this.master) this.master.gain.value = v?0.85:0;
+    try{ localStorage.setItem("coaster_snd", v?"1":"0"); }catch(e){}
+  },
+  // 短い打撃音（カチッ／ガタン）
+  hit(freq,q,dur,vol){
+    if(!this.ready||!this.on) return;
+    const c=this.ctx, t=c.currentTime;
+    const src=c.createBufferSource(); src.buffer=this.noise;
+    const f=c.createBiquadFilter(); f.type="bandpass"; f.frequency.value=freq; f.Q.value=q;
+    const g=c.createGain();
+    g.gain.setValueAtTime(vol,t);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t, Math.random()*1.5); src.stop(t+dur+0.02);
+  },
+  // 単音（ゴール・失敗のしらせ）
+  tone(freq,at,dur,vol,type){
+    if(!this.ready||!this.on) return;
+    const c=this.ctx, t=c.currentTime+at;
+    const o=c.createOscillator(), g=c.createGain();
+    o.type=type||"triangle"; o.frequency.setValueAtTime(freq,t);
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(vol,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t+dur+0.02);
+  },
+  start(){
+    this.init();
+    if(!this.ready) return;
+    if(this.ctx.state==="suspended") this.ctx.resume();
+    this.dist=0; this.nextChain=0; this.nextJoint=0;
+  },
+  silence(){
+    if(!this.ready) return;
+    for(const k of ["roll","wind","brake"]) this[k].g.gain.value=0;
+  },
+  fanfare(){ [523,659,784,1047].forEach((f,i)=>this.tone(f,i*0.11,0.5,0.22)); },
+  sad(){ [392,330,262].forEach((f,i)=>this.tone(f,i*0.16,0.5,0.18,"sine")); },
+  // 毎フレームよぶ。速さと場所に合わせて音を変える
+  update(dt,v,fr,live){
+    if(!this.ready) return;
+    const sp=Math.abs(v);
+    const ease=(node,target)=>{ node.gain.value += (target-node.gain.value)*Math.min(1,dt*9); };
+    if(!live){ this.silence(); return; }
+    // 走行音：速いほど大きく・高く。巻き上げ中はチェーン音を目立たせるため小さめ
+    ease(this.roll.g, Math.min(0.34, sp*0.019)*(fr.lift?0.6:1));
+    this.roll.f.frequency.value = 190+sp*40;
+    // 風切り音：速いときだけ
+    ease(this.wind.g, Math.min(0.20, Math.pow(Math.max(0,sp-6)/18,2)*0.20));
+    // ブレーキ音
+    ease(this.brake.g, (fr.brake&&sp>2)?0.13:0);
+    // 進んだ距離に合わせて打撃音を鳴らす
+    this.dist += sp*dt;
+    if(fr.lift){
+      // 巻き上げのチェーン：カチ、カチ、カチ…
+      if(this.dist>this.nextChain){ this.nextChain=this.dist+0.75; this.hit(1400,6,0.075,0.42); }
+      this.nextJoint=this.dist+6;
+    }else if(sp>1){
+      // レールのつなぎ目：ガタン…ゴトン…
+      if(this.dist>this.nextJoint){ this.nextJoint=this.dist+7.5; this.hit(230,2.2,0.10,Math.min(0.28,0.05+sp*0.011)); }
+    }
+  }
+};
+try{ Snd.on = localStorage.getItem("coaster_snd")!=="0"; }catch(e){}
+
+/* =========================================================================
    6. 走行シミュレーション（位置エネルギー ⇄ 運動エネルギー）
    ========================================================================= */
 const G=9.8, LIFT_SPEED=4.5, STATION_SPEED=3.0;
@@ -670,12 +770,14 @@ function startRun(){
   car={s:0.2, v:1.0};
   stats={t:0,vmax:0,gmax:1,gmin:1,back:false,stall:0,backT:0};
   hideMsg();
+  Snd.start();
   document.getElementById("run").style.display="none";
   document.getElementById("reset").style.display="";
   document.getElementById("side").classList.add("run");
 }
 function stopRun(){
   running=false; finished=false;
+  Snd.silence();
   document.getElementById("run").style.display="";
   document.getElementById("reset").style.display="none";
   document.getElementById("side").classList.remove("run");
@@ -715,6 +817,7 @@ function currentG(fr){ return fr.u[1] + car.v*car.v*fr.ku/G; }
 function finishRun(){
   if(finished) return;
   finished=true; running=false;
+  Snd.silence(); Snd.fanfare();
   document.getElementById("side").classList.remove("run");
   flash("ゴール！ 🎉",
     `かかった時間 ${stats.t.toFixed(1)} 秒　／　最高スピード ${(stats.vmax*3.6).toFixed(0)} km/h<br>`+
@@ -724,6 +827,7 @@ function finishRun(){
 function failRun(why){
   if(finished) return;
   finished=true; running=false;
+  Snd.silence(); Snd.sad();
   document.getElementById("side").classList.remove("run");
   flash(why, "スピードが足りません。<br>"+
     "① スタートの高さを上げる　② まきあげを長く・急にする<br>"+
@@ -753,6 +857,7 @@ function frame(now){
   if(running||finished){
     const fr=sampleAt(car.s);
     stats.gmax=Math.max(stats.gmax,currentG(fr));
+    Snd.update(dt, car.v, fr, running);
     if(camMode===1){
       const eye=V.add(fr.p, V.add(V.mul(fr.u,0.95), V.mul(fr.f,0.55)));
       view=mLookAt(eye, V.add(eye,fr.f), fr.u); camPos=eye;
@@ -910,8 +1015,16 @@ document.querySelectorAll("#camseg button").forEach(b=>{
     b.classList.add("on"); camMode=Number(b.dataset.cam); chase.pos=null;
   };
 });
+const sndBtn=document.getElementById("snd");
+function refreshSndBtn(){
+  sndBtn.textContent = Snd.on ? "🔊 音あり" : "🔇 音なし";
+  sndBtn.style.opacity = Snd.on ? "" : "0.55";
+}
+sndBtn.onclick=()=>{ Snd.init(); Snd.setOn(!Snd.on); refreshSndBtn(); };
+refreshSndBtn();
 addEventListener("keydown",e=>{
   if(e.key==="v"||e.key==="V"){ document.querySelector(`#camseg button[data-cam="${camMode===3?1:3}"]`).click(); }
+  if(e.key==="m"||e.key==="M"){ sndBtn.click(); }
   if(e.key===" "){ e.preventDefault(); running?stopRun():startRun(); }
 });
 
