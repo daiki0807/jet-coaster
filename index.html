@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>ジェットコースターをつくろう</title>
+<style>
+  :root{
+    --bg:#eef3f9; --panel:#ffffff; --line:#d7e0ec; --ink:#20334d; --sub:#6b7f9b;
+    --accent:#2f7de1; --accent2:#ff7a3d; --ok:#25a86b; --danger:#e0463c;
+    --shadow:0 2px 10px rgba(30,50,80,.10);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{
+    font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+    background:var(--bg); color:var(--ink); display:flex;
+  }
+  /* ---------- サイドパネル ---------- */
+  #side{
+    width:330px; flex:none; background:var(--panel); border-right:1px solid var(--line);
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  #sideScroll{overflow-y:auto; padding:12px 14px 24px}
+  h1{font-size:17px; margin:0; padding:14px 14px 10px; letter-spacing:.02em}
+  h1 small{display:block; font-size:11px; color:var(--sub); font-weight:normal; margin-top:3px}
+  .sec{margin-top:16px}
+  .sec>.t{font-size:12px; font-weight:bold; color:var(--sub); margin-bottom:7px; letter-spacing:.04em}
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:6px}
+  .part{
+    display:flex; align-items:center; gap:6px; padding:8px 7px; border:1px solid var(--line);
+    background:#fbfdff; border-radius:9px; cursor:pointer; font-size:12px; line-height:1.25;
+    text-align:left; color:var(--ink); transition:.12s;
+  }
+  .part:hover{border-color:var(--accent); background:#f0f7ff; transform:translateY(-1px)}
+  .part:active{transform:translateY(0)}
+  .part .ic{font-size:17px; width:22px; text-align:center; flex:none}
+  /* ---------- コースリスト ---------- */
+  #list{display:flex; flex-direction:column; gap:4px}
+  .row{
+    display:flex; align-items:center; gap:6px; padding:6px 6px 6px 8px; border-radius:8px;
+    background:#f5f8fc; border:1px solid transparent; cursor:pointer; font-size:12.5px;
+  }
+  .row.sel{border-color:var(--accent); background:#e8f2ff}
+  .row .no{font-size:11px; color:var(--sub); width:16px; flex:none}
+  .row .nm{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .row button{
+    border:none; background:#e3eaf4; color:var(--sub); width:22px; height:22px; border-radius:6px;
+    cursor:pointer; font-size:12px; line-height:1; flex:none;
+  }
+  .row button:hover{background:#cfdcec; color:var(--ink)}
+  .row button.del:hover{background:#ffdedb; color:var(--danger)}
+  .empty{font-size:12px; color:var(--sub); padding:10px; text-align:center; background:#f5f8fc; border-radius:8px}
+  /* ---------- スライダー ---------- */
+  .fld{margin-bottom:9px}
+  .fld label{display:flex; justify-content:space-between; font-size:12px; margin-bottom:3px}
+  .fld label b{color:var(--accent); font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%; accent-color:var(--accent); margin:0}
+  #editor{background:#f5f8fc; border-radius:10px; padding:10px 11px; border:1px solid var(--line)}
+  /* ---------- ボタン ---------- */
+  .btns{display:flex; gap:6px; flex-wrap:wrap}
+  .btn{
+    flex:1; min-width:88px; padding:9px 8px; border-radius:9px; border:1px solid var(--line);
+    background:#fff; color:var(--ink); font-size:12.5px; cursor:pointer; font-family:inherit;
+  }
+  .btn:hover{background:#f0f5fb; border-color:var(--accent)}
+  .btn.warn:hover{border-color:var(--danger); color:var(--danger); background:#fff5f4}
+  select{
+    width:100%; padding:8px; border-radius:9px; border:1px solid var(--line); background:#fff;
+    font-family:inherit; font-size:12.5px; color:var(--ink);
+  }
+  /* ---------- ステージ ---------- */
+  #stage{flex:1; position:relative; min-width:0}
+  canvas{position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none}
+  .ov{position:absolute; pointer-events:none}
+  #topbar{top:0; left:0; right:0; padding:12px; display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap}
+  #topbar>*{pointer-events:auto}
+  .tb{
+    border:none; border-radius:11px; padding:11px 16px; font-size:14px; font-weight:bold; cursor:pointer;
+    font-family:inherit; box-shadow:var(--shadow); background:#fff; color:var(--ink);
+  }
+  .tb.go{background:var(--ok); color:#fff}
+  .tb.stop{background:var(--danger); color:#fff}
+  .tb:disabled{opacity:.45; cursor:not-allowed}
+  .seg{display:flex; background:#fff; border-radius:11px; overflow:hidden; box-shadow:var(--shadow)}
+  .seg button{
+    border:none; background:transparent; padding:11px 14px; font-size:13px; cursor:pointer;
+    font-family:inherit; color:var(--sub); font-weight:bold;
+  }
+  .seg button.on{background:var(--accent); color:#fff}
+  #hud{
+    left:12px; bottom:12px; background:rgba(255,255,255,.92); border-radius:12px; padding:10px 14px;
+    box-shadow:var(--shadow); display:flex; gap:18px; font-variant-numeric:tabular-nums;
+  }
+  #hud div{text-align:center}
+  #hud .k{font-size:10px; color:var(--sub)}
+  #hud .v{font-size:19px; font-weight:bold; line-height:1.15}
+  #hud .u{font-size:10px; color:var(--sub)}
+  #msg{
+    left:50%; top:44%; transform:translate(-50%,-50%); background:rgba(255,255,255,.95); color:var(--ink);
+    padding:18px 26px; border-radius:16px; box-shadow:var(--shadow); text-align:center; display:none;
+  }
+  #msg .big{font-size:24px; font-weight:bold; margin-bottom:6px}
+  #msg .sm{font-size:13px; color:var(--sub); line-height:1.7}
+  #hint{right:12px; bottom:12px; font-size:11px; color:#4a6285; background:rgba(255,255,255,.8);
+    padding:6px 10px; border-radius:8px}
+  #warn{left:12px; top:64px; font-size:12px; color:#a2400f; background:rgba(255,238,222,.95);
+    padding:7px 11px; border-radius:9px; display:none; box-shadow:var(--shadow)}
+  #side.run{opacity:.5; pointer-events:none}
+  /* ---------- スマホ ---------- */
+  @media (max-width:860px){
+    body{flex-direction:column-reverse}
+    #side{width:100%; max-height:47%; border-right:none; border-top:1px solid var(--line)}
+    #stage{flex:1}
+    .tb{padding:10px 13px; font-size:13px}
+    #hud{gap:12px; padding:8px 11px}
+    #hud .v{font-size:16px}
+    #hint{display:none}
+  }
+</style>
+</head>
+<body>
+
+<div id="side">
+  <h1>ジェットコースターをつくろう<small>パーツをクリックしてコースをのばそう</small></h1>
+  <div id="sideScroll">
+
+    <div class="sec">
+      <div class="t">スタートのたかさ</div>
+      <div class="fld">
+        <label><span>出発する高さ</span><b id="shV">8 m</b></label>
+        <input type="range" id="sh" min="0" max="40" step="1" value="8">
+      </div>
+    </div>
+
+    <div class="sec"><div class="t">きほんのパーツ</div><div class="grid" id="g_basic"></div></div>
+    <div class="sec"><div class="t">まきあげ・ブレーキ</div><div class="grid" id="g_sys"></div></div>
+    <div class="sec"><div class="t">カーブ</div><div class="grid" id="g_curve"></div></div>
+    <div class="sec"><div class="t">スリルパーツ</div><div class="grid" id="g_thrill"></div></div>
+
+    <div class="sec">
+      <div class="t">コースの中身（クリックで調整）</div>
+      <div id="list"></div>
+    </div>
+
+    <div class="sec" id="editorWrap" style="display:none">
+      <div class="t" id="editorTitle">パーツの調整</div>
+      <div id="editor"></div>
+    </div>
+
+    <div class="sec">
+      <div class="t">そうさ</div>
+      <div class="btns">
+        <button class="btn" id="undo">↩ 1つもどす</button>
+        <button class="btn warn" id="clear">✕ ぜんぶ消す</button>
+      </div>
+      <div class="btns" style="margin-top:6px">
+        <button class="btn" id="save">💾 ほぞん</button>
+        <button class="btn" id="load">📂 よみこみ</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="t">おてほんコース</div>
+      <select id="preset">
+        <option value="">― えらぶ ―</option>
+      </select>
+    </div>
+
+  </div>
+</div>
+
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div class="ov" id="topbar">
+    <button class="tb go" id="run">▶ 走らせる</button>
+    <button class="tb stop" id="reset" style="display:none">■ もどる</button>
+    <div class="seg" id="camseg">
+      <button data-cam="3" class="on">🎥 三人称</button>
+      <button data-cam="1">👤 一人称</button>
+    </div>
+  </div>
+  <div class="ov" id="warn"></div>
+  <div class="ov" id="hud">
+    <div><div class="k">スピード</div><div class="v" id="hSpd">0</div><div class="u">km/h</div></div>
+    <div><div class="k">たかさ</div><div class="v" id="hHgt">0</div><div class="u">m</div></div>
+    <div><div class="k">Gフォース</div><div class="v" id="hG">1.0</div><div class="u">G</div></div>
+    <div><div class="k">コースの長さ</div><div class="v" id="hLen">0</div><div class="u">m</div></div>
+  </div>
+  <div class="ov" id="msg"><div class="big"></div><div class="sm"></div></div>
+  <div class="ov" id="hint">ドラッグ：まわす ／ ホイール：ズーム</div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   0. ちいさな数学ライブラリ
+   ========================================================================= */
+const V = {
+  add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  mul:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+  len:a=>Math.hypot(a[0],a[1],a[2]),
+  norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1; return [a[0]/l,a[1]/l,a[2]/l];},
+  lerp:(a,b,t)=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t],
+  // ロドリゲスの回転公式（axis は単位ベクトル）
+  rot:(v,ax,ang)=>{
+    const c=Math.cos(ang), s=Math.sin(ang), k=V.cross(ax,v), d=V.dot(ax,v)*(1-c);
+    return [v[0]*c+k[0]*s+ax[0]*d, v[1]*c+k[1]*s+ax[1]*d, v[2]*c+k[2]*s+ax[2]*d];
+  }
+};
+function mMul(a,b){ // a*b（列優先）
+  const o=new Float32Array(16);
+  for(let c=0;c<4;c++) for(let r=0;r<4;r++){
+    let s=0; for(let k=0;k<4;k++) s+=a[k*4+r]*b[c*4+k];
+    o[c*4+r]=s;
+  }
+  return o;
+}
+function mPersp(fovy,asp,n,f){
+  const t=1/Math.tan(fovy/2), o=new Float32Array(16);
+  o[0]=t/asp; o[5]=t; o[10]=(f+n)/(n-f); o[11]=-1; o[14]=2*f*n/(n-f);
+  return o;
+}
+function mLookAt(eye,ctr,up){
+  const z=V.norm(V.sub(eye,ctr));
+  let x=V.cross(up,z);
+  if(V.len(x)<1e-5) x=V.cross([0,0,1],z);
+  x=V.norm(x);
+  const y=V.cross(z,x);
+  return new Float32Array([
+    x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0,
+    -V.dot(x,eye),-V.dot(y,eye),-V.dot(z,eye),1
+  ]);
+}
+function mFrame(r,u,f,p){
+  return new Float32Array([r[0],r[1],r[2],0, u[0],u[1],u[2],0, f[0],f[1],f[2],0, p[0],p[1],p[2],1]);
+}
+const MI = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+
+/* =========================================================================
+   1. パーツ定義（ここを増やせばパーツが増えます）
+   ========================================================================= */
+// pitch:上下の角度(度) / yaw:曲がる角度(度) / bank:カーブのかたむき(度・戻る)
+// roll:ひねり(度・戻らない) / hill:こぶの大きさ(度) / lift:巻き上げ / brake:ブレーキ
+const PARTS = {
+  straight : {n:"まっすぐ",       ic:"▬", g:"basic",  len:10, edit:["len","pitch"]},
+  up       : {n:"ゆるい上り",     ic:"↗", g:"basic",  len:10, pitch:25,  edit:["len","pitch"]},
+  upSteep  : {n:"きゅうな上り",   ic:"⤴", g:"basic",  len:10, pitch:50,  edit:["len","pitch"]},
+  down     : {n:"ゆるい下り",     ic:"↘", g:"basic",  len:10, pitch:-25, edit:["len","pitch"]},
+  downSteep: {n:"きゅうな下り",   ic:"⤵", g:"basic",  len:14, pitch:-55, edit:["len","pitch"]},
+
+  lift     : {n:"まきあげ",       ic:"⛓", g:"sys",    len:22, pitch:38, lift:true, edit:["len","pitch"]},
+  brake    : {n:"ブレーキ",       ic:"🛑", g:"sys",    len:14, brake:true, edit:["len","pitch"]},
+
+  curveR   : {n:"右カーブ",       ic:"↷", g:"curve",  len:14, yaw:60,  bank:25,  edit:["len","yaw","bank","pitch"]},
+  curveL   : {n:"左カーブ",       ic:"↶", g:"curve",  len:14, yaw:-60, bank:-25, edit:["len","yaw","bank","pitch"]},
+  uturnR   : {n:"右Uターン",      ic:"⤿", g:"curve",  len:24, yaw:180, bank:40,  edit:["len","yaw","bank","pitch"]},
+  uturnL   : {n:"左Uターン",      ic:"⤾", g:"curve",  len:24, yaw:-180,bank:-40, edit:["len","yaw","bank","pitch"]},
+
+  loop     : {n:"ループ",         ic:"⭕", g:"thrill", len:46, pitch:360, rel:true, edit:["len","pitch"],
+              range:{pitch:[180,720,15], len:[24,90,2]}},
+  hill     : {n:"こぶ（ふわっ）", ic:"⌒", g:"thrill", len:26, hill:24,  edit:["len","hill","yaw"]},
+  twist    : {n:"ひねり",         ic:"🌀", g:"thrill", len:18, roll:360, edit:["len","roll","pitch"]},
+  screw    : {n:"コークスクリュー",ic:"🍥",g:"thrill", len:24, roll:360, yaw:90, edit:["len","roll","yaw","pitch"]},
+};
+const LABEL = {len:"長さ", pitch:"上り下り", yaw:"まがり", bank:"かたむき", roll:"ひねり", hill:"こぶの大きさ"};
+const UNIT  = {len:"m", pitch:"°", yaw:"°", bank:"°", roll:"°", hill:"°"};
+const RANGE = {len:[4,60,1], pitch:[-80,80,5], yaw:[-180,180,5], bank:[-60,60,5], roll:[-360,360,15], hill:[5,60,5]};
+
+function newPiece(type){
+  const d=PARTS[type], p={t:type};
+  for(const k of d.edit) p[k] = (d[k]!==undefined ? d[k] : 0);
+  // edit に無くても効果を持つ値は保持
+  for(const k of ["len","pitch","yaw","bank","roll","hill"]) if(p[k]===undefined) p[k]=(d[k]||0);
+  return p;
+}
+function rangeOf(type,key){ return (PARTS[type].range && PARTS[type].range[key]) || RANGE[key]; }
+
+/* =========================================================================
+   2. コース（パーツ列 → レールの骨組み frames）
+   ========================================================================= */
+const DS = 0.5;          // 骨組みの間隔(m)
+const PLATFORM = 9;      // スタート台の長さ(m)
+const RMIN = 13;         // レールを曲げられる最小の半径(m)
+let pieces = [];
+let startY = 8;
+let frames = [];
+let totalLen = 0;
+
+function buildFrames(){
+  const D=Math.PI/180;
+  const out=[];
+  // 進路（f・r0）は「かたむき」をふくまない骨組みで進める。
+  // かたむき／ひねりは phi（累積ロール）として最後に f のまわりに回すだけ。
+  // こうしないと、バンクをつけたカーブで進行方向がゆがんでしまう。
+  let p=[0,startY,0], f=[0,0,1], r0=[1,0,0], phi=0;
+  let s=0;
+  const push=(lift,brake,stn)=>{
+    const u0=V.norm(V.cross(f,r0));
+    const u=V.rot(u0,f,phi), r=V.rot(r0,f,phi);
+    out.push({p:p.slice(), f:f.slice(), u, r, s, lift:!!lift, brake:!!brake, st:!!stn, k:0});
+  };
+  push(false,false,true);
+
+  // スタート台（固定・平ら）：ここでは駅のタイヤがゆっくり押し出す
+  {
+    const n=Math.round(PLATFORM/DS), st=PLATFORM/n;
+    for(let i=0;i<n;i++){ p=V.add(p,V.mul(f,st)); s+=st; push(false,false,true); }
+  }
+
+  for(const pc of pieces){
+    const def=PARTS[pc.t];
+    const L=Math.max(1,pc.len);
+    const n=Math.max(2, Math.round(L/DS));
+    const st=L/n;
+    // 上り下りは「水平から見た角度」＝絶対角。今の傾きから目標の傾きへなめらかに移る。
+    const th0=Math.asin(Math.max(-1,Math.min(1,f[1])));
+    const tgt=(pc.pitch||0)*D, amp=(pc.hill||0)*D;
+    const need=Math.abs((def.hill?amp:tgt)-th0)*RMIN*1.5;
+    const Ltr=Math.min(L*0.9, Math.max(2,need));
+    const maxD=st/RMIN;
+    let prevBank=0;
+    for(let i=0;i<n;i++){
+      p=V.add(p, V.mul(f, st)); s+=st;
+      const t=(i+1)/n;
+      // --- 上下 ---
+      let dP;
+      // ループは「回転」あつかい。しかも本物と同じで、下は広く・上は狭い形（Gをおさえる）
+      if(def.rel){ dP = tgt*(0.6+0.75*Math.sin(Math.PI*(t-0.5/n)))/(n*1.077); }
+      else{
+        const x=Math.min(1, t*L/Ltr), S=x*x*(3-2*x);
+        const want = def.hill ? th0*(1-S)+amp*Math.sin(2*Math.PI*t)
+                              : th0+(tgt-th0)*S;
+        const cur=Math.asin(Math.max(-1,Math.min(1,f[1])));
+        dP=Math.max(-maxD, Math.min(maxD, want-cur));
+      }
+      // --- ひねり（戻らない）＋ かたむき（戻る） ---
+      let dR=((pc.roll||0)*D)/n;
+      if(pc.bank){ const b=pc.bank*Math.sin(Math.PI*t)*D; dR+=b-prevBank; prevBank=b; }
+      const dY=((pc.yaw||0)*D)/n;
+      // --- 適用：上下は r0 まわり、まがりは u0 まわり（どちらもバンク抜きの軸）---
+      f=V.rot(f,r0,-dP);
+      let u0=V.norm(V.cross(f,r0));
+      f=V.rot(f,u0,dY); r0=V.rot(r0,u0,dY);
+      // --- 正規直交化（誤差の蓄積をふせぐ）---
+      f=V.norm(f); u0=V.norm(V.cross(f,r0)); r0=V.norm(V.cross(u0,f));
+      // ピッチとヨーをくり返すと少しずつ「ねじれ」がたまるので、
+      // 上下がひっくり返っていないときだけ、r0 を水平方向にもどしておく。
+      {
+        const cand=V.cross([0,1,0], f);
+        if(V.len(cand)>0.17){
+          const c=V.norm(cand);
+          if(V.dot(c,r0)>0.9) r0=c;
+        }
+      }
+      phi-=dR;   // 右カーブ(+)には右下がりのバンク(+)がつくように向きをそろえる
+      push(def.lift, def.brake);
+    }
+  }
+  // 巻き上げのチェーンは「下りはじめる」までつづく（頂上で止まらないように）
+  {
+    let onChain=false;
+    for(const fr of out){
+      if(fr.lift){ onChain=true; }
+      else if(onChain){ if(fr.f[1]>=-0.02) fr.lift=true; else onChain=false; }
+    }
+  }
+  // カーブのきつさ（曲率）。ku は「座席の上向き」に対する符号つき曲率＝Gの計算に使う。
+  // 丘の頂上では負（ふわっと浮く）、谷やループの底では正（からだが重くなる）。
+  for(let i=0;i<out.length-1;i++){
+    const ds=out[i+1].s-out[i].s;
+    const df=V.sub(out[i+1].f, out[i].f);
+    out[i].ku = ds>0 ? V.dot(df,out[i].u)/ds : 0;
+  }
+  if(out.length>1) out[out.length-1].ku=out[out.length-2].ku;
+  frames=out; totalLen=s;
+}
+function sampleAt(s){
+  const F=frames;
+  s=Math.max(0, Math.min(totalLen, s));
+  let lo=0, hi=F.length-1;
+  while(hi-lo>1){ const m=(lo+hi)>>1; if(F[m].s<=s) lo=m; else hi=m; }
+  const A=F[lo], B=F[hi];
+  const d=B.s-A.s, t=d>1e-9?(s-A.s)/d:0;
+  const f=V.norm(V.lerp(A.f,B.f,t));
+  let u=V.norm(V.lerp(A.u,B.u,t));
+  const r=V.norm(V.cross(u,f)); u=V.norm(V.cross(f,r));
+  return {p:V.lerp(A.p,B.p,t), f,u,r, ku:A.ku+(B.ku-A.ku)*t, lift:A.lift, brake:A.brake, st:A.st};
+}
+
+/* =========================================================================
+   3. WebGL
+   ========================================================================= */
+const cv=document.getElementById("cv");
+const gl=cv.getContext("webgl",{antialias:true, alpha:false});
+if(!gl){ document.body.innerHTML='<div style="padding:40px;font-family:sans-serif">このブラウザは 3D表示（WebGL）に対応していません。Chrome や Safari の最新版でひらいてください。</div>'; throw new Error("no webgl"); }
+
+function sh(type,src){
+  const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function prog(vs,fs){
+  const p=gl.createProgram();
+  gl.attachShader(p,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+const P3 = prog(`
+  attribute vec3 aPos; attribute vec3 aNor; attribute vec3 aCol;
+  uniform mat4 uMVP, uModel;
+  varying vec3 vNor, vCol, vW;
+  void main(){
+    vec4 w = uModel*vec4(aPos,1.0);
+    vW = w.xyz;
+    vNor = (uModel*vec4(aNor,0.0)).xyz;
+    vCol = aCol;
+    gl_Position = uMVP*vec4(aPos,1.0);
+  }`,`
+  precision mediump float;
+  varying vec3 vNor, vCol, vW;
+  uniform vec3 uLight, uCam, uFog;
+  void main(){
+    vec3 n=normalize(vNor);
+    float d=max(dot(n,normalize(uLight)),0.0);
+    float amb=0.42+0.22*max(n.y,0.0);
+    vec3 c=vCol*(amb+0.72*d);
+    float fg=clamp((length(vW-uCam)-130.0)/250.0,0.0,1.0);
+    gl_FragColor=vec4(mix(c,uFog,fg),1.0);
+  }`);
+const L3={pos:gl.getAttribLocation(P3,"aPos"), nor:gl.getAttribLocation(P3,"aNor"), col:gl.getAttribLocation(P3,"aCol"),
+  mvp:gl.getUniformLocation(P3,"uMVP"), mdl:gl.getUniformLocation(P3,"uModel"),
+  lit:gl.getUniformLocation(P3,"uLight"), cam:gl.getUniformLocation(P3,"uCam"), fog:gl.getUniformLocation(P3,"uFog")};
+
+const PSKY = prog(`
+  attribute vec2 aP; varying vec2 vP;
+  void main(){ vP=aP; gl_Position=vec4(aP,0.0,1.0); }`,`
+  precision mediump float; varying vec2 vP;
+  void main(){
+    float t=clamp(vP.y*0.5+0.5,0.0,1.0);
+    vec3 top=vec3(0.22,0.50,0.86), bot=vec3(0.80,0.90,0.97);
+    gl_FragColor=vec4(mix(bot,top,pow(t,0.75)),1.0);
+  }`);
+const LSKY={p:gl.getAttribLocation(PSKY,"aP")};
+const skyBuf=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,skyBuf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);
+
+/* --- メッシュ組み立て --- */
+class MB{
+  constructor(){ this.p=[]; this.n=[]; this.c=[]; }
+  tri(a,b,c,n,col){
+    const P=this.p,N=this.n,C=this.c;
+    for(const v of [a,b,c]){ P.push(v[0],v[1],v[2]); N.push(n[0],n[1],n[2]); C.push(col[0],col[1],col[2]); }
+  }
+  quad(a,b,c,d,col,hint){
+    let n=V.cross(V.sub(b,a),V.sub(d,a));
+    if(V.len(n)<1e-9) return;
+    n=V.norm(n);
+    if(hint){
+      const ctr=[(a[0]+b[0]+c[0]+d[0])/4,(a[1]+b[1]+c[1]+d[1])/4,(a[2]+b[2]+c[2]+d[2])/4];
+      if(V.dot(n,V.sub(ctr,hint))<0) n=V.mul(n,-1);
+    }
+    this.tri(a,b,c,n,col); this.tri(a,c,d,n,col);
+  }
+  box(ctr,r,u,f,h,col){
+    const P=(x,y,z)=>V.add(ctr, V.add(V.mul(r,x*h[0]), V.add(V.mul(u,y*h[1]), V.mul(f,z*h[2]))));
+    const q=(a,b,c,d)=>this.quad(a,b,c,d,col,ctr);
+    q(P(-1,1,1),P(1,1,1),P(1,-1,1),P(-1,-1,1));
+    q(P(1,1,-1),P(-1,1,-1),P(-1,-1,-1),P(1,-1,-1));
+    q(P(-1,1,-1),P(1,1,-1),P(1,1,1),P(-1,1,1));
+    q(P(-1,-1,1),P(1,-1,1),P(1,-1,-1),P(-1,-1,-1));
+    q(P(1,1,1),P(1,1,-1),P(1,-1,-1),P(1,-1,1));
+    q(P(-1,1,-1),P(-1,1,1),P(-1,-1,1),P(-1,-1,-1));
+  }
+  // 四角すい（木のかたち用）
+  pyramid(base,hw,h,col){
+    const top=[base[0],base[1]+h,base[2]];
+    const c=[[hw,hw],[-hw,hw],[-hw,-hw],[hw,-hw]].map(o=>[base[0]+o[0],base[1],base[2]+o[1]]);
+    const ctr=[base[0],base[1]+h*0.4,base[2]];
+    for(let i=0;i<4;i++){
+      const a=c[i], b=c[(i+1)%4];
+      let n=V.norm(V.cross(V.sub(b,a),V.sub(top,a)));
+      const mid=[(a[0]+b[0]+top[0])/3,(a[1]+b[1]+top[1])/3,(a[2]+b[2]+top[2])/3];
+      if(V.dot(n,V.sub(mid,ctr))<0) n=V.mul(n,-1);
+      this.tri(a,b,top,n,col);
+    }
+    this.quad(c[0],c[1],c[2],c[3],col,ctr);
+  }
+  // 断面が四角のチューブを1区間ぶん
+  seg(cA,rA,uA,cB,rB,uB,hw,hh,col){
+    const C=(c,r,u,x,y)=>V.add(c, V.add(V.mul(r,x*hw), V.mul(u,y*hh)));
+    const a0=C(cA,rA,uA,1,1), a1=C(cA,rA,uA,-1,1), a2=C(cA,rA,uA,-1,-1), a3=C(cA,rA,uA,1,-1);
+    const b0=C(cB,rB,uB,1,1), b1=C(cB,rB,uB,-1,1), b2=C(cB,rB,uB,-1,-1), b3=C(cB,rB,uB,1,-1);
+    const h=V.mul(V.add(cA,cB),0.5);
+    this.quad(a0,a1,b1,b0,col,h); this.quad(a1,a2,b2,b1,col,h);
+    this.quad(a2,a3,b3,b2,col,h); this.quad(a3,a0,b0,b3,col,h);
+  }
+}
+function upload(mb){
+  const mk=(arr)=>{ const b=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(arr),gl.STATIC_DRAW); return b; };
+  return {count:mb.p.length/3, pos:mk(mb.p), nor:mk(mb.n), col:mk(mb.c)};
+}
+function freeMesh(m){ if(!m) return; gl.deleteBuffer(m.pos); gl.deleteBuffer(m.nor); gl.deleteBuffer(m.col); }
+function draw(m,model){
+  if(!m||!m.count) return;
+  gl.uniformMatrix4fv(L3.mdl,false,model);
+  gl.uniformMatrix4fv(L3.mvp,false,mMul(VP,model));
+  gl.bindBuffer(gl.ARRAY_BUFFER,m.pos); gl.vertexAttribPointer(L3.pos,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,m.nor); gl.vertexAttribPointer(L3.nor,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,m.col); gl.vertexAttribPointer(L3.col,3,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLES,0,m.count);
+}
+
+/* =========================================================================
+   4. シーンのメッシュ
+   ========================================================================= */
+const COL={
+  rail:[0.83,0.86,0.92], railLift:[1.0,0.62,0.22], railBrake:[0.92,0.33,0.28], railStation:[0.42,0.78,0.55],
+  tie:[0.40,0.30,0.24], pole:[0.55,0.60,0.68],
+  grass1:[0.46,0.72,0.38], grass2:[0.42,0.68,0.35], road:[0.78,0.76,0.70],
+  car:[0.90,0.22,0.20], carTop:[1.0,0.85,0.25], head:[1.0,0.83,0.68],
+  trunk:[0.45,0.32,0.22], leaf:[0.24,0.60,0.32], leaf2:[0.30,0.66,0.36]
+};
+let mTrack=null, mGround=null, mCar=null;
+
+function buildGround(){
+  const mb=new MB();
+  const T=30, S=26; // 30x30 マス × 26m
+  for(let i=0;i<T;i++) for(let j=0;j<T;j++){
+    const x=(i-T/2)*S, z=(j-T/2)*S;
+    const c=((i+j)%2===0)?COL.grass1:COL.grass2;
+    mb.quad([x,0,z],[x+S,0,z],[x+S,0,z+S],[x,0,z+S],c,[x+S/2,-1,z+S/2]);
+  }
+  // 木（見た目の速度感のため）
+  let seed=12345;
+  const rnd=()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
+  for(let i=0;i<190;i++){
+    const a=rnd()*Math.PI*2, d=34+rnd()*250;
+    const x=Math.cos(a)*d, z=Math.sin(a)*d, h=4+rnd()*5;
+    const c=rnd()>0.5?COL.leaf:COL.leaf2;
+    mb.box([x,h*0.14,z],[1,0,0],[0,1,0],[0,0,1],[0.22,h*0.14,0.22],COL.trunk);
+    mb.pyramid([x,h*0.26,z], h*0.30, h*0.55, c);
+    mb.pyramid([x,h*0.60,z], h*0.22, h*0.48, c);
+  }
+  return upload(mb);
+}
+function buildTrack(){
+  const mb=new MB();
+  const F=frames, GA=0.55, RS=0.085;
+  for(let i=0;i<F.length-1;i++){
+    const A=F[i], B=F[i+1];
+    const col = A.lift?COL.railLift : (A.brake?COL.railBrake : (A.st?COL.railStation:COL.rail));
+    for(const sd of [-1,1]){
+      mb.seg(V.add(A.p,V.mul(A.r,sd*GA)), A.r, A.u, V.add(B.p,V.mul(B.r,sd*GA)), B.r, B.u, RS, RS, col);
+    }
+    // 中央のレール（背骨）
+    mb.seg(V.add(A.p,V.mul(A.u,-0.30)), A.r, A.u, V.add(B.p,V.mul(B.u,-0.30)), B.r, B.u, 0.10, 0.10, COL.pole);
+    if(i%6===0){ // まくら木
+      mb.box(V.add(A.p,V.mul(A.u,-0.15)), A.r, A.u, A.f, [GA+0.14, 0.05, 0.11], COL.tie);
+    }
+  }
+  // 支柱
+  for(let i=0;i<F.length;i+=22){
+    const A=F[i];
+    const top=V.add(A.p, V.mul(A.u,-0.35));
+    if(top[1]>1.0){
+      const h=top[1];
+      mb.box([top[0],h/2,top[2]],[1,0,0],[0,1,0],[0,0,1],[0.17,h/2,0.17],COL.pole);
+      mb.box([top[0],0.15,top[2]],[1,0,0],[0,1,0],[0,0,1],[0.55,0.15,0.55],COL.road);
+    }
+  }
+  // ゴール地点の目印
+  if(F.length>2){
+    const E=F[F.length-1];
+    mb.box(V.add(E.p,V.mul(E.u,1.6)), E.r,E.u,E.f, [1.5,0.28,0.12], [0.15,0.17,0.22]);
+  }
+  return upload(mb);
+}
+function buildCar(){
+  const mb=new MB();
+  const R=[1,0,0],U=[0,1,0],Fw=[0,0,1];
+  mb.box([0,0.42,0],R,U,Fw,[0.62,0.34,1.25],COL.car);         // 車体
+  mb.box([0,0.78,-0.1],R,U,Fw,[0.64,0.06,1.15],COL.carTop);   // ふち
+  mb.box([0,0.30,1.32],R,U,Fw,[0.45,0.28,0.22],COL.carTop);   // 先頭
+  mb.box([0,0.12,0],R,U,Fw,[0.70,0.10,1.1],COL.pole);         // 台車
+  for(const z of [0.55,-0.45]) for(const x of [-0.28,0.28]){
+    mb.box([x,0.95,z],R,U,Fw,[0.16,0.17,0.16],COL.head);      // 乗っている人
+    mb.box([x,0.66,z],R,U,Fw,[0.20,0.16,0.16],[0.25,0.45,0.85]);
+  }
+  return upload(mb);
+}
+function rebuild(){
+  buildFrames();
+  freeMesh(mTrack); mTrack=buildTrack();
+  document.getElementById("hLen").textContent=Math.round(totalLen);
+  // 地面より下チェック
+  let under=false; for(const f of frames) if(f.p[1]<0.6){ under=true; break; }
+  const w=document.getElementById("warn");
+  if(under){ w.style.display="block"; w.textContent="⚠ コースが地面の下にもぐっています。下りをへらすか、スタートの高さを上げてみよう。"; }
+  else w.style.display="none";
+  if(autoFit) fitCamera();
+}
+mGround=buildGround();
+mCar=buildCar();
+
+/* =========================================================================
+   5. カメラ
+   ========================================================================= */
+let orbit={yaw:0.7, pitch:0.42, dist:60, ctr:[0,8,0]};
+let autoFit=true;
+let VP=MI;
+let camPos=[0,0,0];
+let camMode=3;           // 3=三人称 1=一人称
+let chase={pos:null, look:null};
+
+function fitCamera(){
+  if(!frames.length) return;
+  let mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9];
+  for(const f of frames) for(let i=0;i<3;i++){ mn[i]=Math.min(mn[i],f.p[i]); mx[i]=Math.max(mx[i],f.p[i]); }
+  orbit.ctr=[(mn[0]+mx[0])/2,(mn[1]+mx[1])/2+2,(mn[2]+mx[2])/2];
+  const rad=Math.max(12, V.len(V.sub(mx,mn))/2);
+  orbit.dist=rad*1.8+10;
+}
+function resize(){
+  const dpr=Math.min(window.devicePixelRatio||1, 2);
+  const w=Math.round(cv.clientWidth*dpr), h=Math.round(cv.clientHeight*dpr);
+  if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+}
+
+/* ---- マウス／タッチ操作 ---- */
+let drag=null, pinch=null;
+cv.addEventListener("pointerdown",e=>{ if(running&&camMode!==0) return; cv.setPointerCapture(e.pointerId); drag={x:e.clientX,y:e.clientY}; });
+cv.addEventListener("pointermove",e=>{
+  if(!drag) return;
+  orbit.yaw   -= (e.clientX-drag.x)*0.008;
+  orbit.pitch -= (e.clientY-drag.y)*0.006;
+  orbit.pitch = Math.max(-0.2, Math.min(1.45, orbit.pitch));
+  drag={x:e.clientX,y:e.clientY};
+});
+addEventListener("pointerup",()=>drag=null);
+cv.addEventListener("wheel",e=>{
+  e.preventDefault();
+  orbit.dist=Math.max(8, Math.min(400, orbit.dist*(1+Math.sign(e.deltaY)*0.12)));
+  autoFit=false;
+},{passive:false});
+cv.addEventListener("touchstart",e=>{ if(e.touches.length===2){ pinch=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); } },{passive:true});
+cv.addEventListener("touchmove",e=>{
+  if(e.touches.length===2&&pinch){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    orbit.dist=Math.max(8,Math.min(400, orbit.dist*pinch/d)); pinch=d; autoFit=false;
+  }
+},{passive:true});
+cv.addEventListener("touchend",()=>pinch=null);
+
+/* =========================================================================
+   6. 走行シミュレーション（位置エネルギー ⇄ 運動エネルギー）
+   ========================================================================= */
+const G=9.8, LIFT_SPEED=4.5, STATION_SPEED=3.0;
+let running=false, car={s:0,v:0}, stats={t:0,vmax:0,gmax:1,gmin:1,back:false,stall:0,backT:0}, finished=false;
+
+function startRun(){
+  if(!pieces.length){ flash("パーツをおいてね","左のパーツをクリックするとコースがのびます"); return; }
+  rebuild();
+  running=true; finished=false;
+  car={s:0.2, v:1.0};
+  stats={t:0,vmax:0,gmax:1,gmin:1,back:false,stall:0,backT:0};
+  hideMsg();
+  document.getElementById("run").style.display="none";
+  document.getElementById("reset").style.display="";
+  document.getElementById("side").classList.add("run");
+}
+function stopRun(){
+  running=false; finished=false;
+  document.getElementById("run").style.display="";
+  document.getElementById("reset").style.display="none";
+  document.getElementById("side").classList.remove("run");
+  chase.pos=null; hideMsg();
+}
+function physics(dt){
+  const steps=Math.min(40, Math.ceil(dt/0.002));
+  const h=dt/steps;
+  for(let i=0;i<steps;i++){
+    const fr=sampleAt(car.s);
+    let a = -G*fr.f[1];                       // 坂による加速
+    a -= 0.0022*car.v*Math.abs(car.v);        // 空気ていこう
+    if(Math.abs(car.v)>0.05) a -= 0.09*Math.sign(car.v); // ころがりまさつ
+    if(fr.brake && car.v>1.6) a -= 9.0;
+    car.v += a*h;
+    if(fr.lift && car.v<LIFT_SPEED) car.v=LIFT_SPEED;    // チェーンで巻き上げ
+    if(fr.st && car.v<STATION_SPEED) car.v=STATION_SPEED; // 駅のタイヤで押し出す
+    car.s += car.v*h;
+    if(car.v<-0.4) stats.back=true;
+    if(car.s<0.05){ car.s=0.05; if(car.v<0) car.v=0; }
+    // 一周できずにスタートまで戻ってきてしまった
+    if(stats.back && fr.st && car.s<PLATFORM*0.8){ failRun("スタートまでもどってきちゃった…"); return; }
+    if(car.s>=totalLen-0.05){ car.s=totalLen-0.05; car.v=Math.max(0,car.v); finishRun(); return; }
+  }
+  stats.t+=dt;
+  stats.vmax=Math.max(stats.vmax, car.v);
+  const g=currentG(sampleAt(car.s));
+  stats.gmax=Math.max(stats.gmax,g); stats.gmin=Math.min(stats.gmin,g);
+  // とちゅうで止まってしまった判定
+  stats.stall = (Math.abs(car.v)<0.6 && car.s>PLATFORM) ? stats.stall+dt : 0;
+  if(car.v<-0.5) stats.backT+=dt;
+  if(stats.stall>2.5) failRun("とちゅうで止まってしまった…");
+  else if(stats.backT>4) failRun("のぼりきれずに、もどってしまった…");
+}
+// 座席が受ける上下方向のG（1.0＝ふつう、0に近い＝ふわっと浮く、大きい＝からだが重い）
+function currentG(fr){ return fr.u[1] + car.v*car.v*fr.ku/G; }
+function finishRun(){
+  if(finished) return;
+  finished=true; running=false;
+  document.getElementById("side").classList.remove("run");
+  flash("ゴール！ 🎉",
+    `かかった時間 ${stats.t.toFixed(1)} 秒　／　最高スピード ${(stats.vmax*3.6).toFixed(0)} km/h<br>`+
+    `いちばん重いG ${stats.gmax.toFixed(1)} G　／　いちばん軽いG ${stats.gmin.toFixed(1)} G<br>`+
+    `コースの長さ ${Math.round(totalLen)} m`);
+}
+function failRun(why){
+  if(finished) return;
+  finished=true; running=false;
+  document.getElementById("side").classList.remove("run");
+  flash(why, "スピードが足りません。<br>"+
+    "① スタートの高さを上げる　② まきあげを長く・急にする<br>"+
+    "③ 高いところにある山やループを小さくする");
+}
+function flash(big,sm){
+  const m=document.getElementById("msg");
+  m.querySelector(".big").textContent=big;
+  m.querySelector(".sm").innerHTML=sm||"";
+  m.style.display="block";
+}
+function hideMsg(){ document.getElementById("msg").style.display="none"; }
+
+/* =========================================================================
+   7. 毎フレームの描画
+   ========================================================================= */
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  resize();
+
+  if(running) physics(dt);
+
+  // --- カメラ ---
+  const asp=Math.max(0.2, cv.width/cv.height);
+  let view, proj;
+  if(running||finished){
+    const fr=sampleAt(car.s);
+    stats.gmax=Math.max(stats.gmax,currentG(fr));
+    if(camMode===1){
+      const eye=V.add(fr.p, V.add(V.mul(fr.u,0.95), V.mul(fr.f,0.55)));
+      view=mLookAt(eye, V.add(eye,fr.f), fr.u); camPos=eye;
+      proj=mPersp(1.35,asp,0.12,600);
+    }else{
+      const up=V.norm(V.lerp([0,1,0],fr.u,0.45));
+      const want=V.add(fr.p, V.add(V.mul(fr.f,-8.5), V.mul(up,3.2)));
+      chase.pos = chase.pos ? V.lerp(chase.pos, want, Math.min(1, dt*7)) : want;
+      if(chase.pos[1]<0.8) chase.pos[1]=0.8;
+      view=mLookAt(chase.pos, V.add(fr.p,V.mul(fr.u,0.6)), up); camPos=chase.pos;
+      proj=mPersp(1.10,asp,0.12,600);
+    }
+    // HUD
+    document.getElementById("hSpd").textContent=(Math.abs(car.v)*3.6).toFixed(0);
+    document.getElementById("hHgt").textContent=fr.p[1].toFixed(1);
+    const g=currentG(fr), ge=document.getElementById("hG");
+    ge.textContent=g.toFixed(1);
+    ge.style.color = g>4.0 ? "#e0463c" : (g<0.3 ? "#2f7de1" : "");
+    if(running && stats.back && Math.abs(car.v)<6){
+      flash("もどっている…", "スピードが足りなかったみたい。<br>スタートを高くするか、ループを小さくしてみよう。");
+    } else if(running && !finished && Math.abs(car.v)>=6){ hideMsg(); }
+  }else{
+    const c=Math.cos(orbit.pitch);
+    const eye=[orbit.ctr[0]+Math.sin(orbit.yaw)*c*orbit.dist,
+               orbit.ctr[1]+Math.sin(orbit.pitch)*orbit.dist,
+               orbit.ctr[2]+Math.cos(orbit.yaw)*c*orbit.dist];
+    view=mLookAt(eye,orbit.ctr,[0,1,0]); camPos=eye;
+    proj=mPersp(1.02,asp,0.12,900);
+    document.getElementById("hSpd").textContent="0";
+    document.getElementById("hHgt").textContent=startY.toFixed(1);
+    document.getElementById("hG").textContent="1.0";
+  }
+  VP=mMul(proj,view);
+
+  // --- えがく ---
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(PSKY);
+  gl.bindBuffer(gl.ARRAY_BUFFER,skyBuf);
+  gl.enableVertexAttribArray(LSKY.p);
+  gl.vertexAttribPointer(LSKY.p,2,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.disableVertexAttribArray(LSKY.p);
+
+  gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(P3);
+  gl.enableVertexAttribArray(L3.pos); gl.enableVertexAttribArray(L3.nor); gl.enableVertexAttribArray(L3.col);
+  gl.uniform3f(L3.lit,0.45,0.82,0.35);
+  gl.uniform3f(L3.cam,camPos[0],camPos[1],camPos[2]);
+  gl.uniform3f(L3.fog,0.80,0.89,0.96);
+  draw(mGround,MI);
+  draw(mTrack,MI);
+  if(running||finished){
+    for(let i=0;i<3;i++){
+      if(camMode===1&&i===0) continue;             // 一人称のときは自分の車をかくさない
+      const fr=sampleAt(Math.max(0.05, car.s-i*2.9));
+      draw(mCar, mFrame(fr.r,fr.u,fr.f,V.add(fr.p,V.mul(fr.u,0.18))));
+    }
+  }else if(frames.length){
+    const fr=sampleAt(0.2);
+    draw(mCar, mFrame(fr.r,fr.u,fr.f,V.add(fr.p,V.mul(fr.u,0.18))));
+  }
+  gl.disableVertexAttribArray(L3.pos); gl.disableVertexAttribArray(L3.nor); gl.disableVertexAttribArray(L3.col);
+
+  requestAnimationFrame(frame);
+}
+gl.enable(gl.DEPTH_TEST);
+gl.clearColor(0.80,0.89,0.96,1);
+
+/* =========================================================================
+   8. UI
+   ========================================================================= */
+let selected=-1;
+
+function buildPalette(){
+  const boxes={basic:document.getElementById("g_basic"), sys:document.getElementById("g_sys"),
+               curve:document.getElementById("g_curve"), thrill:document.getElementById("g_thrill")};
+  for(const key in PARTS){
+    const d=PARTS[key];
+    const b=document.createElement("button");
+    b.className="part";
+    b.innerHTML=`<span class="ic">${d.ic}</span><span>${d.n}</span>`;
+    b.onclick=()=>{ pieces.push(newPiece(key)); selected=pieces.length-1; autoFit=true; renderList(); rebuild(); };
+    boxes[d.g].appendChild(b);
+  }
+}
+function renderList(){
+  const el=document.getElementById("list");
+  el.innerHTML="";
+  if(!pieces.length){
+    el.innerHTML='<div class="empty">上のパーツをクリックして<br>コースをつくろう！</div>';
+    renderEditor(); return;
+  }
+  pieces.forEach((pc,i)=>{
+    const d=PARTS[pc.t];
+    const row=document.createElement("div");
+    row.className="row"+(i===selected?" sel":"");
+    row.innerHTML=`<span class="no">${i+1}</span><span class="ic">${d.ic}</span><span class="nm">${d.n}</span>`;
+    const mk=(txt,cls,fn)=>{ const b=document.createElement("button"); b.textContent=txt; if(cls)b.className=cls;
+      b.onclick=(e)=>{e.stopPropagation(); fn();}; row.appendChild(b); };
+    mk("↑",null,()=>{ if(i>0){ [pieces[i-1],pieces[i]]=[pieces[i],pieces[i-1]]; selected=i-1; renderList(); rebuild(); } });
+    mk("↓",null,()=>{ if(i<pieces.length-1){ [pieces[i+1],pieces[i]]=[pieces[i],pieces[i+1]]; selected=i+1; renderList(); rebuild(); } });
+    mk("✕","del",()=>{ pieces.splice(i,1); selected=Math.min(selected,pieces.length-1); renderList(); rebuild(); });
+    row.onclick=()=>{ selected=i; renderList(); };
+    el.appendChild(row);
+  });
+  renderEditor();
+}
+function renderEditor(){
+  const wrap=document.getElementById("editorWrap"), ed=document.getElementById("editor");
+  if(selected<0||selected>=pieces.length){ wrap.style.display="none"; return; }
+  const pc=pieces[selected], d=PARTS[pc.t];
+  wrap.style.display="";
+  document.getElementById("editorTitle").textContent=`${selected+1}番目「${d.n}」の調整`;
+  ed.innerHTML="";
+  for(const key of d.edit){
+    const [mn,mx,st]=rangeOf(pc.t,key);
+    const f=document.createElement("div"); f.className="fld";
+    f.innerHTML=`<label><span>${LABEL[key]}</span><b>${pc[key]}${UNIT[key]}</b></label>`;
+    const r=document.createElement("input");
+    r.type="range"; r.min=mn; r.max=mx; r.step=st; r.value=pc[key];
+    r.oninput=()=>{ pc[key]=Number(r.value); f.querySelector("b").textContent=pc[key]+UNIT[key]; rebuild(); };
+    f.appendChild(r); ed.appendChild(f);
+  }
+}
+/* --- 各ボタン --- */
+document.getElementById("sh").oninput=e=>{
+  startY=Number(e.target.value);
+  document.getElementById("shV").textContent=startY+" m";
+  rebuild();
+};
+document.getElementById("undo").onclick=()=>{ pieces.pop(); selected=pieces.length-1; autoFit=true; renderList(); rebuild(); };
+document.getElementById("clear").onclick=()=>{ if(pieces.length&&!confirm("コースをぜんぶ消しますか？")) return;
+  pieces=[]; selected=-1; autoFit=true; renderList(); rebuild(); };
+document.getElementById("save").onclick=()=>{
+  const b=document.getElementById("save"), t="💾 ほぞん";
+  try{
+    localStorage.setItem("coaster_v1", JSON.stringify({startY,pieces}));
+    b.textContent="✓ ほぞんした"; setTimeout(()=>b.textContent=t,1200);
+  }catch(e){ alert("このひらき方ではコースをほぞんできません。"); }
+};
+document.getElementById("load").onclick=()=>{
+  let s=null;
+  try{ s=localStorage.getItem("coaster_v1"); }catch(e){}
+  if(!s){ alert("ほぞんされたコースがありません。"); return; }
+  try{ const o=JSON.parse(s); stopRun(); loadCourse(o.pieces, o.startY); }
+  catch(e){ alert("ほぞんしたコースを読みこめませんでした。"); }
+};
+document.getElementById("run").onclick=startRun;
+document.getElementById("reset").onclick=stopRun;
+document.querySelectorAll("#camseg button").forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll("#camseg button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on"); camMode=Number(b.dataset.cam); chase.pos=null;
+  };
+});
+addEventListener("keydown",e=>{
+  if(e.key==="v"||e.key==="V"){ document.querySelector(`#camseg button[data-cam="${camMode===3?1:3}"]`).click(); }
+  if(e.key===" "){ e.preventDefault(); running?stopRun():startRun(); }
+});
+
+/* --- おてほんコース --- */
+const PRESETS={
+  "れんしゅうコース":{y:6, p:[["lift",{len:22,pitch:38}],["straight",{len:6}],["downSteep",{len:16,pitch:-55}],
+      ["hill",{}],["curveR",{}],["straight",{len:8}],["curveR",{}],["brake",{}]]},
+  "ループコース":{y:5, p:[["lift",{len:30,pitch:42}],["straight",{len:6}],["downSteep",{len:24,pitch:-60}],
+      ["loop",{len:46}],["curveR",{len:18,yaw:90}],["hill",{}],["curveL",{len:18,yaw:90}],["brake",{}]]},
+  "どきどきコース":{y:6, p:[["lift",{len:30,pitch:42}],["straight",{len:5}],["downSteep",{len:22,pitch:-60}],
+      ["hill",{len:26,hill:30}],["loop",{len:46}],["uturnR",{}],["screw",{}],["curveL",{}],
+      ["hill",{len:22,hill:24}],["twist",{}],["uturnL",{}],["brake",{}]]},
+  "らせんタワー":{y:4, p:[["lift",{len:34,pitch:45}],["straight",{len:5}],["downSteep",{len:14,pitch:-45}],
+      ["curveR",{len:16,yaw:120,bank:30,pitch:-12}],["curveR",{len:16,yaw:120,bank:30,pitch:-12}],
+      ["curveR",{len:16,yaw:120,bank:30,pitch:-12}],["curveR",{len:16,yaw:120,bank:30,pitch:-12}],
+      ["hill",{len:24,hill:18}],["brake",{}]]}
+};
+function loadCourse(list, y){
+  pieces=(list||[]).map(o=>{
+    if(Array.isArray(o)){ const p=newPiece(o[0]); Object.assign(p,o[1]); return p; }
+    const p=newPiece(o.t); Object.assign(p,o); return p;
+  }).filter(p=>PARTS[p.t]);
+  startY=(y!==undefined)?y:startY;
+  document.getElementById("sh").value=startY;
+  document.getElementById("shV").textContent=startY+" m";
+  selected=-1; autoFit=true; renderList(); rebuild();
+}
+{
+  const sel=document.getElementById("preset");
+  for(const k in PRESETS){ const o=document.createElement("option"); o.value=k; o.textContent=k; sel.appendChild(o); }
+  sel.onchange=()=>{ const k=sel.value; if(!k) return; stopRun(); loadCourse(PRESETS[k].p, PRESETS[k].y); sel.value=""; };
+}
+
+/* --- 起動 --- */
+buildPalette();
+loadCourse(PRESETS["れんしゅうコース"].p, PRESETS["れんしゅうコース"].y);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
