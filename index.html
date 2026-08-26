@@ -88,6 +88,22 @@
     font-family:inherit; color:var(--sub); font-weight:bold;
   }
   .seg button.on{background:var(--accent); color:#fff}
+  .viewnav{display:flex; gap:5px; padding:5px; background:rgba(255,255,255,.94); border-radius:11px; box-shadow:var(--shadow)}
+  .viewnav button{
+    border:none; border-radius:8px; padding:7px 9px; background:#f1f5fa; color:var(--ink);
+    font:600 11px/1.15 inherit; cursor:pointer; white-space:nowrap;
+  }
+  .viewnav button:hover{background:#e1edfb; color:var(--accent)}
+  .connectBtn{background:#edf9f3; border-color:#9ad8bb; color:#16794b; font-weight:bold}
+  .connectBtn:hover{background:#daf3e7; border-color:var(--ok); color:#11663f}
+  .connectBtn:disabled{opacity:.5; cursor:not-allowed}
+  .linkGroup{border:1px solid #86cdb0; background:#eefaf5; border-radius:9px; overflow:hidden}
+  .linkHead{display:flex; align-items:center; gap:6px; padding:7px 8px; font-size:12px; cursor:pointer}
+  .linkHead .nm{flex:1; font-weight:bold; color:#16794b}
+  .linkHead button{border:none; border-radius:6px; background:#d8f1e5; color:#16794b; padding:5px 7px; cursor:pointer}
+  .linkBody{padding:0 9px 9px; border-top:1px solid #bfe5d3; font-size:11px; color:var(--sub)}
+  .linkBody .steps{line-height:1.7; padding:7px 0}
+  .linkBody .btns .btn{background:#fff; min-width:100px}
   #hud{
     left:12px; bottom:12px; background:rgba(255,255,255,.92); border-radius:12px; padding:10px 14px;
     box-shadow:var(--shadow); display:flex; gap:18px; font-variant-numeric:tabular-nums;
@@ -104,9 +120,12 @@
   #msg .sm{font-size:13px; color:var(--sub); line-height:1.7}
   #hint{right:12px; bottom:12px; font-size:11px; color:#4a6285; background:rgba(255,255,255,.8);
     padding:6px 10px; border-radius:8px}
+  #guideInfo{right:12px; bottom:48px; font-size:12px; font-weight:bold; color:#335b83;
+    background:rgba(255,255,255,.92); padding:7px 11px; border-radius:9px; box-shadow:var(--shadow)}
   #warn{left:12px; top:64px; font-size:12px; color:#a2400f; background:rgba(255,238,222,.95);
     padding:7px 11px; border-radius:9px; display:none; box-shadow:var(--shadow)}
   #side.run{opacity:.5; pointer-events:none}
+  #stage.run .editOnly{display:none}
   /* ---------- スマホ ---------- */
   @media (max-width:860px){
     body{flex-direction:column-reverse}
@@ -116,6 +135,10 @@
     #hud{gap:12px; padding:8px 11px}
     #hud .v{font-size:16px}
     #hint{display:none}
+    #guideInfo{bottom:62px; right:10px; font-size:11px}
+    #warn{top:112px; max-width:calc(100% - 24px)}
+    .viewnav{order:5; width:100%; max-width:340px}
+    .viewnav button{flex:1; padding:7px 5px}
   }
 </style>
 </head>
@@ -158,6 +181,9 @@
         <button class="btn" id="save">💾 ほぞん</button>
         <button class="btn" id="load">📂 よみこみ</button>
       </div>
+      <div class="btns" style="margin-top:6px">
+        <button class="btn connectBtn" id="connect">🔗 スタートにつなぐ</button>
+      </div>
     </div>
 
     <div class="sec">
@@ -180,6 +206,11 @@
       <button data-cam="1">👤 一人称</button>
     </div>
     <button class="tb" id="snd" title="音のオン・オフ（Mキー）">🔊 音あり</button>
+    <div class="viewnav editOnly" aria-label="見る場所を選ぶ">
+      <button id="viewStart">🟢 スタート</button>
+      <button id="viewGoal">🔴 ゴール</button>
+      <button id="viewAll">▣ 全体</button>
+    </div>
   </div>
   <div class="ov" id="warn"></div>
   <div class="ov" id="hud">
@@ -189,7 +220,8 @@
     <div><div class="k">コースの長さ</div><div class="v" id="hLen">0</div><div class="u">m</div></div>
   </div>
   <div class="ov" id="msg"><div class="big"></div><div class="sm"></div></div>
-  <div class="ov" id="hint">ドラッグ：まわす ／ ホイール：ズーム</div>
+  <div class="ov editOnly" id="guideInfo"></div>
+  <div class="ov editOnly" id="hint">左ドラッグ：まわす ／ 右ドラッグ：移動 ／ ホイール：ズーム</div>
 </div>
 
 <script>
@@ -290,6 +322,12 @@ let pieces = [];
 let startY = 8;
 let frames = [];
 let totalLen = 0;
+let userEndFrame = null;
+let autoLink = null;
+let courseConnected = false;
+let connectionStale = false;
+
+function courseKey(){ return JSON.stringify({startY,pieces}); }
 
 function buildFrames(){
   const D=Math.PI/180;
@@ -299,10 +337,10 @@ function buildFrames(){
   // こうしないと、バンクをつけたカーブで進行方向がゆがんでしまう。
   let p=[0,startY,0], f=[0,0,1], r0=[1,0,0], phi=0;
   let s=0;
-  const push=(lift,brake,stn)=>{
+  const push=(lift,brake,stn,isAuto)=>{
     const u0=V.norm(V.cross(f,r0));
     const u=V.rot(u0,f,phi), r=V.rot(r0,f,phi);
-    out.push({p:p.slice(), f:f.slice(), u, r, s, lift:!!lift, brake:!!brake, st:!!stn, k:0});
+    out.push({p:p.slice(), f:f.slice(), u, r, s, lift:!!lift, brake:!!brake, st:!!stn, auto:!!isAuto, k:0});
   };
   push(false,false,true);
 
@@ -359,6 +397,30 @@ function buildFrames(){
       }
       phi-=dR;   // 右カーブ(+)には右下がりのバンク(+)がつくように向きをそろえる
       push(def.lift, def.brake);
+    }
+  }
+  userEndFrame=out[out.length-1];
+  courseConnected=!!(autoLink && autoLink.sourceKey===courseKey() && autoLink.route && autoLink.route.length>1);
+  connectionStale=!!autoLink && !courseConnected;
+  if(courseConnected){
+    const route=autoLink.route;
+    const startR=userEndFrame.r.slice(); let linkTravel=0;
+    for(let i=1;i<route.length;i++){
+      const prev=p, next=route[Math.min(route.length-1,i+1)];
+      p=route[i].slice();
+      const ds=V.len(V.sub(p,prev));
+      if(ds<1e-5) continue;
+      s+=ds; linkTravel+=ds;
+      f=V.norm(V.sub(next,route[Math.max(0,i-1)]));
+      let rr=V.cross([0,1,0],f);
+      if(V.len(rr)<0.08) rr=out[out.length-1].r;
+      else rr=V.norm(rr);
+      const rt=Math.min(1,linkTravel/12),rs=rt*rt*(3-2*rt);
+      let sr=V.sub(startR,V.mul(f,V.dot(startR,f)));
+      if(V.len(sr)<.05) sr=out[out.length-1].r; else sr=V.norm(sr);
+      const rollAng=Math.atan2(V.dot(V.cross(sr,rr),f),V.dot(sr,rr));
+      r0=V.norm(V.rot(sr,f,rollAng*rs)); phi=0;
+      push(false, i>route.length-1-PLATFORM/DS, false, true);
     }
   }
   // 巻き上げのチェーンは「下りはじめる」までつづく（頂上で止まらないように）
@@ -522,12 +584,13 @@ function draw(m,model){
    ========================================================================= */
 const COL={
   rail:[0.83,0.86,0.92], railLift:[1.0,0.62,0.22], railBrake:[0.92,0.33,0.28], railStation:[0.42,0.78,0.55],
+  railAuto:[0.40,0.76,0.92], start:[0.12,0.72,0.38], goal:[0.92,0.24,0.22], guide:[0.98,0.72,0.20],
   tie:[0.40,0.30,0.24], pole:[0.55,0.60,0.68],
   grass1:[0.46,0.72,0.38], grass2:[0.42,0.68,0.35], road:[0.78,0.76,0.70],
   car:[0.90,0.22,0.20], carTop:[1.0,0.85,0.25], head:[1.0,0.83,0.68],
   trunk:[0.45,0.32,0.22], leaf:[0.24,0.60,0.32], leaf2:[0.30,0.66,0.36]
 };
-let mTrack=null, mGround=null, mCar=null;
+let mTrack=null, mGround=null, mCar=null, mGuide=null;
 
 function buildGround(){
   const mb=new MB();
@@ -555,7 +618,7 @@ function buildTrack(){
   const F=frames, GA=0.55, RS=0.085;
   for(let i=0;i<F.length-1;i++){
     const A=F[i], B=F[i+1];
-    const col = A.lift?COL.railLift : (A.brake?COL.railBrake : (A.st?COL.railStation:COL.rail));
+    const col = A.auto?COL.railAuto : (A.lift?COL.railLift : (A.brake?COL.railBrake : (A.st?COL.railStation:COL.rail)));
     for(const sd of [-1,1]){
       mb.seg(V.add(A.p,V.mul(A.r,sd*GA)), A.r, A.u, V.add(B.p,V.mul(B.r,sd*GA)), B.r, B.u, RS, RS, col);
     }
@@ -575,10 +638,27 @@ function buildTrack(){
       mb.box([top[0],0.15,top[2]],[1,0,0],[0,1,0],[0,0,1],[0.55,0.15,0.55],COL.road);
     }
   }
-  // ゴール地点の目印
+  // スタート／ゴール地点の目印
   if(F.length>2){
+    const S=F[0];
+    mb.box(V.add(S.p,V.add(V.mul(S.r,-1.7),V.mul(S.u,1.15))), S.r,S.u,S.f, [0.13,1.15,0.13], COL.start);
+    mb.box(V.add(S.p,V.add(V.mul(S.r,1.7),V.mul(S.u,1.15))), S.r,S.u,S.f, [0.13,1.15,0.13], COL.start);
+    mb.box(V.add(S.p,V.mul(S.u,2.28)), S.r,S.u,S.f, [1.82,0.15,0.15], COL.start);
     const E=F[F.length-1];
-    mb.box(V.add(E.p,V.mul(E.u,1.6)), E.r,E.u,E.f, [1.5,0.28,0.12], [0.15,0.17,0.22]);
+    mb.box(V.add(E.p,V.mul(E.u,1.55)), E.r,E.u,E.f, [1.45,0.24,0.12], COL.goal);
+  }
+  return upload(mb);
+}
+function buildGuide(){
+  if(courseConnected || !pieces.length || !userEndFrame) return null;
+  const mb=new MB(), a=userEndFrame.p, b=[0,startY,0], d=V.sub(b,a), len=V.len(d);
+  if(len<0.5) return null;
+  const f=V.norm(d), u=[0,1,0];
+  let r=V.cross(u,f); if(V.len(r)<0.05) r=[1,0,0]; else r=V.norm(r);
+  const uu=V.norm(V.cross(f,r));
+  for(let s=1;s<len-0.3;s+=3.2){
+    const e=Math.min(len,s+1.7), p0=V.add(a,V.mul(f,s)), p1=V.add(a,V.mul(f,e));
+    mb.seg(p0,r,uu,p1,r,uu,0.055,0.055,COL.guide);
   }
   return upload(mb);
 }
@@ -598,13 +678,162 @@ function buildCar(){
 function rebuild(){
   buildFrames();
   freeMesh(mTrack); mTrack=buildTrack();
+  freeMesh(mGuide); mGuide=buildGuide();
   document.getElementById("hLen").textContent=Math.round(totalLen);
   // 地面より下チェック
   let under=false; for(const f of frames) if(f.p[1]<0.6){ under=true; break; }
   const w=document.getElementById("warn");
   if(under){ w.style.display="block"; w.textContent="⚠ コースが地面の下にもぐっています。下りをへらすか、スタートの高さを上げてみよう。"; }
   else w.style.display="none";
-  if(autoFit) fitCamera();
+  updateConnectionUI();
+}
+function hermitePoint(a,b,va,vb,t){
+  const t2=t*t,t3=t2*t;
+  return V.add(V.add(V.mul(a,2*t3-3*t2+1),V.mul(va,t3-2*t2+t)),
+               V.add(V.mul(b,-2*t3+3*t2),V.mul(vb,t3-t2)));
+}
+function resamplePoints(raw,step=DS){
+  const cum=[0];
+  for(let i=1;i<raw.length;i++) cum.push(cum[i-1]+V.len(V.sub(raw[i],raw[i-1])));
+  const out=[raw[0].slice()], total=cum[cum.length-1];
+  let j=1;
+  for(let s=step;s<total;s+=step){
+    while(j<cum.length-1&&cum[j]<s) j++;
+    const d=cum[j]-cum[j-1],t=d?(s-cum[j-1])/d:0;
+    out.push(V.lerp(raw[j-1],raw[j],t));
+  }
+  out.push(raw[raw.length-1].slice());
+  return out;
+}
+function routeIsSafe(route,baseFrames){
+  let minY=1e9,minR=1e9,collision=false;
+  for(const p of route) minY=Math.min(minY,p[1]);
+  for(let i=2;i<route.length-2;i++){
+    const a=V.norm(V.sub(route[i],route[i-1])),b=V.norm(V.sub(route[i+1],route[i]));
+    const ang=Math.acos(Math.max(-1,Math.min(1,V.dot(a,b))));
+    if(ang>1e-5) minR=Math.min(minR,V.len(V.sub(route[i+1],route[i]))/ang);
+  }
+  for(let i=10;i<route.length-10&&!collision;i+=3){
+    const p=route[i];
+    for(let j=8;j<baseFrames.length-10;j+=4){
+      if(V.len(V.sub(p,baseFrames[j].p))<2.4){ collision=true; break; }
+    }
+  }
+  return {ok:minY>=0.65&&minR>=RMIN*.72&&!collision,minY,minR,collision};
+}
+const mod2pi=a=>((a%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
+function dubinsParams(type,alpha,beta,d){
+  const sa=Math.sin(alpha),sb=Math.sin(beta),ca=Math.cos(alpha),cb=Math.cos(beta),cab=Math.cos(alpha-beta);
+  let p2,tmp,t,p,q;
+  if(type==="LSL"){
+    p2=2+d*d-2*cab+2*d*(sa-sb); if(p2<0)return null;
+    tmp=Math.atan2(cb-ca,d+sa-sb); t=mod2pi(-alpha+tmp); p=Math.sqrt(p2); q=mod2pi(beta-tmp);
+  }else if(type==="RSR"){
+    p2=2+d*d-2*cab+2*d*(-sa+sb); if(p2<0)return null;
+    tmp=Math.atan2(ca-cb,d-sa+sb); t=mod2pi(alpha-tmp); p=Math.sqrt(p2); q=mod2pi(-beta+tmp);
+  }else if(type==="LSR"){
+    p2=-2+d*d+2*cab+2*d*(sa+sb); if(p2<0)return null; p=Math.sqrt(p2);
+    tmp=Math.atan2(-ca-cb,d+sa+sb)-Math.atan2(-2,p); t=mod2pi(-alpha+tmp); q=mod2pi(-beta+tmp);
+  }else if(type==="RSL"){
+    p2=d*d-2+2*cab-2*d*(sa+sb); if(p2<0)return null; p=Math.sqrt(p2);
+    tmp=Math.atan2(ca+cb,d-sa-sb)-Math.atan2(2,p); t=mod2pi(alpha-tmp); q=mod2pi(beta-tmp);
+  }else if(type==="RLR"){
+    tmp=(6-d*d+2*cab+2*d*(sa-sb))/8; if(Math.abs(tmp)>1)return null;
+    p=mod2pi(2*Math.PI-Math.acos(tmp)); t=mod2pi(alpha-Math.atan2(ca-cb,d-sa+sb)+p/2); q=mod2pi(alpha-beta-t+p);
+  }else{
+    tmp=(6-d*d+2*cab+2*d*(-sa+sb))/8; if(Math.abs(tmp)>1)return null;
+    p=mod2pi(2*Math.PI-Math.acos(tmp)); t=mod2pi(-alpha-Math.atan2(ca-cb,d+sa-sb)+p/2); q=mod2pi(beta-alpha-t+p);
+  }
+  return [t,p,q];
+}
+function sampleDubins(a,b,startHeading,radius,type,params,liftHeight){
+  const modes=type.split(""), segs=params.map(x=>x*radius), total=segs[0]+segs[1]+segs[2];
+  let x=a[2],z=a[0],th=startHeading,travel=0;
+  const flatSpeed=Math.hypot(userEndFrame.f[0],userEndFrame.f[2]);
+  const m0=Math.max(-1.5,Math.min(1.5,userEndFrame.f[1]/Math.max(.15,flatSpeed)))*total;
+  const yAt=u=>{
+    const u2=u*u,u3=u2*u,u4=u3*u,u5=u4*u;
+    const h00=1-10*u3+15*u4-6*u5,h10=u-6*u3+8*u4-3*u5;
+    const h01=10*u3-15*u4+6*u5,h11=-4*u3+7*u4-3*u5;
+    const bump=64*u3*(1-u)*(1-u)*(1-u);
+    return a[1]*h00+m0*h10+b[1]*h01+0*h11+Math.max(0,liftHeight)*bump;
+  };
+  const route=[[z,a[1],x]];
+  for(let k=0;k<3;k++){
+    let left=segs[k];
+    while(left>1e-6){
+      const dl=Math.min(DS,left),nt=modes[k]==="L"?th+dl/radius:(modes[k]==="R"?th-dl/radius:th);
+      if(modes[k]==="S"){ x+=Math.cos(th)*dl; z+=Math.sin(th)*dl; }
+      else if(modes[k]==="L"){ x+=radius*(Math.sin(nt)-Math.sin(th)); z+=radius*(-Math.cos(nt)+Math.cos(th)); }
+      else{ x+=radius*(Math.sin(th)-Math.sin(nt)); z+=radius*(Math.cos(nt)-Math.cos(th)); }
+      th=nt; left-=dl; travel+=dl;
+      route.push([z,yAt(Math.min(1,travel/total)),x]);
+    }
+  }
+  route[route.length-1]=b.slice();
+  return route;
+}
+function generateAutoRoute(variant=0,marginScale=1,liftHeight=0){
+  if(!userEndFrame) return {error:"ゴール地点を見つけられませんでした。"};
+  const base=frames.slice(),a=userEndFrame.p.slice(),b=[0,startY,0];
+  if(a[1]<0.65) return {error:"ゴールが地面の下にあります。最後の下りをゆるくしてください。"};
+  let h0=Math.atan2(userEndFrame.f[0],userEndFrame.f[2]);
+  if(Math.hypot(userEndFrame.f[0],userEndFrame.f[2])<.08) h0=0;
+  const dx=b[2]-a[2],dy=b[0]-a[0],theta=Math.atan2(dy,dx),direct=Math.hypot(dx,dy);
+  const types=["LSL","RSR","LSR","RSL","RLR","LRL"], candidates=[];
+  for(const baseR of [RMIN,18,25,34,46,62]){
+    const radius=baseR*marginScale,d=direct/radius,alpha=mod2pi(h0-theta),beta=mod2pi(-theta);
+    for(const type of types){
+      const params=dubinsParams(type,alpha,beta,d); if(!params)continue;
+      const route=sampleDubins(a,b,h0,radius,type,params,liftHeight),safe=routeIsSafe(route,base);
+      if(!safe.ok)continue;
+      const mid=route[Math.floor(route.length/2)],chord=[b[0]-a[0],0,b[2]-a[2]];
+      let side=[chord[2],0,-chord[0]]; if(V.len(side)<.1)side=[1,0,0]; else side=V.norm(side);
+      const sideValue=V.dot(V.sub(mid,V.mul(V.add(a,b),.5)),side);
+      const length=route.reduce((n,p,i)=>i?n+V.len(V.sub(p,route[i-1])):0,0);
+      candidates.push({route,safe,length,radius,type,sideValue});
+    }
+  }
+  if(candidates.length){
+    const preferred=candidates.filter(c=>(variant%2?c.sideValue<0:c.sideValue>=0));
+    return (preferred.length?preferred:candidates).sort((x,y)=>x.length-y.length)[0];
+  }
+  return {error:"既存のレールを安全によけながら駅へ戻る経路が見つかりません。最後に直線かゆるいカーブを追加してください。"};
+}
+function createConnection(variant,opts={}){
+  if(!pieces.length) return;
+  const previous=autoLink;
+  autoLink=null;
+  buildFrames();
+  const v=variant===undefined?(previous?previous.variant:0):variant;
+  const marginScale=opts.marginScale!==undefined?opts.marginScale:(previous?previous.marginScale:1);
+  const liftHeight=opts.liftHeight!==undefined?opts.liftHeight:(previous?previous.liftHeight:0);
+  let chosen=v, made=generateAutoRoute(chosen,marginScale,liftHeight);
+  if(made.error&&!previous&&variant===undefined){ chosen=(chosen+1)%2; made=generateAutoRoute(chosen,marginScale,liftHeight); }
+  if(made.error){
+    autoLink=previous; rebuild(); renderList();
+    flash("まだ安全につなげません",made.error);
+    return;
+  }
+  autoLink={sourceKey:courseKey(),variant:chosen,marginScale,liftHeight,route:made.route,length:made.length,
+            collapsed:previous?previous.collapsed:true};
+  lastActionWasLink=true;
+  rebuild(); renderList(); fitCamera(true); hideMsg();
+}
+function removeConnection(){ autoLink=null; lastActionWasLink=false; rebuild(); renderList(); }
+function updateConnectionUI(){
+  const btn=document.getElementById("connect"), info=document.getElementById("guideInfo");
+  if(!btn||!info) return;
+  if(!pieces.length){ btn.disabled=true; btn.textContent="🔗 パーツを追加してね"; info.textContent="🟢 緑の駅からコースを作ろう"; }
+  else if(courseConnected){ btn.disabled=true; btn.textContent="✓ 駅につながっています"; info.textContent="✓ 1周できる形につながっています"; }
+  else if(connectionStale){ btn.disabled=false; btn.textContent="🔄 スタートにつなぎ直す"; info.textContent="⚠ 調整したので接続が外れました"; }
+  else{
+    btn.disabled=false; btn.textContent="🔗 スタートにつなぐ";
+    const d=userEndFrame?V.len(V.sub([0,startY,0],userEndFrame.p)):0;
+    info.textContent=`🔴 ゴールから駅まで 約${Math.round(d)} m`;
+  }
+  const head=document.querySelector(".linkHead .nm");
+  if(head&&connectionStale) head.textContent="⚠ 自動つなぎ（つなぎ直しが必要）";
 }
 mGround=buildGround();
 mCar=buildCar();
@@ -613,19 +842,42 @@ mCar=buildCar();
    5. カメラ
    ========================================================================= */
 let orbit={yaw:0.7, pitch:0.42, dist:60, ctr:[0,8,0]};
-let autoFit=true;
 let VP=MI;
 let camPos=[0,0,0];
 let camMode=3;           // 3=三人称 1=一人称
 let chase={pos:null, look:null};
+let cameraTween=null;
 
-function fitCamera(){
+function orbitEye(){
+  const c=Math.cos(orbit.pitch);
+  return [orbit.ctr[0]+Math.sin(orbit.yaw)*c*orbit.dist,
+          orbit.ctr[1]+Math.sin(orbit.pitch)*orbit.dist,
+          orbit.ctr[2]+Math.cos(orbit.yaw)*c*orbit.dist];
+}
+function moveCamera(ctr,dist,animate=true){
+  const toCtr=ctr.slice(), toDist=Math.max(8,Math.min(400,dist));
+  if(!animate){ orbit.ctr=toCtr; orbit.dist=toDist; cameraTween=null; return; }
+  cameraTween={ctr:orbit.ctr.slice(),dist:orbit.dist,toCtr,toDist,t0:performance.now(),dur:360};
+}
+function updateCameraTween(now){
+  if(!cameraTween) return;
+  const q=Math.min(1,(now-cameraTween.t0)/cameraTween.dur), t=q*q*(3-2*q);
+  orbit.ctr=V.lerp(cameraTween.ctr,cameraTween.toCtr,t);
+  orbit.dist=cameraTween.dist+(cameraTween.toDist-cameraTween.dist)*t;
+  if(q>=1) cameraTween=null;
+}
+
+function fitCamera(animate=true){
   if(!frames.length) return;
   let mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9];
   for(const f of frames) for(let i=0;i<3;i++){ mn[i]=Math.min(mn[i],f.p[i]); mx[i]=Math.max(mx[i],f.p[i]); }
-  orbit.ctr=[(mn[0]+mx[0])/2,(mn[1]+mx[1])/2+2,(mn[2]+mx[2])/2];
+  const ctr=[(mn[0]+mx[0])/2,(mn[1]+mx[1])/2+2,(mn[2]+mx[2])/2];
   const rad=Math.max(12, V.len(V.sub(mx,mn))/2);
-  orbit.dist=rad*1.8+10;
+  moveCamera(ctr,rad*1.8+10,animate);
+}
+function focusFrame(fr){
+  if(!fr) return;
+  moveCamera(V.add(fr.p,V.mul(fr.u,1.2)),Math.max(22,Math.min(42,orbit.dist*.55)),true);
 }
 function resize(){
   const dpr=Math.min(window.devicePixelRatio||1, 2);
@@ -634,29 +886,85 @@ function resize(){
 }
 
 /* ---- マウス／タッチ操作 ---- */
-let drag=null, pinch=null;
-cv.addEventListener("pointerdown",e=>{ if(running&&camMode!==0) return; cv.setPointerCapture(e.pointerId); drag={x:e.clientX,y:e.clientY}; });
-cv.addEventListener("pointermove",e=>{
-  if(!drag) return;
-  orbit.yaw   -= (e.clientX-drag.x)*0.008;
-  orbit.pitch -= (e.clientY-drag.y)*0.006;
-  orbit.pitch = Math.max(-0.2, Math.min(1.45, orbit.pitch));
-  drag={x:e.clientX,y:e.clientY};
+function viewBasis(){
+  const eye=orbitEye(), f=V.norm(V.sub(orbit.ctr,eye));
+  let r=V.cross(f,[0,1,0]); if(V.len(r)<0.05) r=[1,0,0]; else r=V.norm(r);
+  return {r,u:V.norm(V.cross(r,f)),f};
+}
+function screenOffset(x,y,dist=orbit.dist){
+  const rect=cv.getBoundingClientRect(), ndx=((x-rect.left)/rect.width)*2-1, ndy=1-((y-rect.top)/rect.height)*2;
+  const b=viewBasis(), half=dist*Math.tan(1.02/2), asp=Math.max(.2,rect.width/rect.height);
+  return V.add(V.mul(b.r,ndx*half*asp),V.mul(b.u,ndy*half));
+}
+function zoomAt(x,y,factor){
+  cameraTween=null;
+  const old=orbit.dist, next=Math.max(8,Math.min(400,old*factor));
+  const off=screenOffset(x,y,old);
+  orbit.ctr=V.add(orbit.ctr,V.mul(off,1-next/old));
+  orbit.dist=next;
+}
+function panBy(dx,dy){
+  cameraTween=null;
+  const b=viewBasis(), rect=cv.getBoundingClientRect(), scale=2*orbit.dist*Math.tan(1.02/2)/Math.max(1,rect.height);
+  orbit.ctr=V.add(orbit.ctr,V.add(V.mul(b.r,-dx*scale),V.mul(b.u,dy*scale)));
+}
+function rotateBy(dx,dy){
+  cameraTween=null;
+  orbit.yaw-=dx*0.008; orbit.pitch-=dy*0.006;
+  orbit.pitch=Math.max(-0.2,Math.min(1.45,orbit.pitch));
+}
+let mouseDrag=null, touchGesture=null;
+const touchPoints=new Map();
+function touchSnapshot(){
+  const a=[...touchPoints.values()];
+  if(a.length<2) return null;
+  return {cx:(a[0].x+a[1].x)/2,cy:(a[0].y+a[1].y)/2,d:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)};
+}
+cv.addEventListener("pointerdown",e=>{
+  if(running||finished) return;
+  cv.setPointerCapture(e.pointerId);
+  if(e.pointerType==="touch"){
+    touchPoints.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    touchGesture=touchPoints.size>=2?touchSnapshot():{x:e.clientX,y:e.clientY};
+  }else mouseDrag={x:e.clientX,y:e.clientY,pan:e.button!==0};
 });
-addEventListener("pointerup",()=>drag=null);
+cv.addEventListener("pointermove",e=>{
+  if(e.pointerType==="touch"&&touchPoints.has(e.pointerId)){
+    touchPoints.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(touchPoints.size>=2){
+      const now=touchSnapshot();
+      if(touchGesture&&touchGesture.d){
+        zoomAt(now.cx,now.cy,touchGesture.d/Math.max(1,now.d));
+        panBy(now.cx-touchGesture.cx,now.cy-touchGesture.cy);
+      }
+      touchGesture=now;
+    }else if(touchGesture){
+      rotateBy(e.clientX-touchGesture.x,e.clientY-touchGesture.y);
+      touchGesture={x:e.clientX,y:e.clientY};
+    }
+    return;
+  }
+  if(!mouseDrag) return;
+  const dx=e.clientX-mouseDrag.x, dy=e.clientY-mouseDrag.y;
+  mouseDrag.pan?panBy(dx,dy):rotateBy(dx,dy);
+  mouseDrag.x=e.clientX; mouseDrag.y=e.clientY;
+});
+function endPointer(e){
+  if(e.pointerType==="touch"){
+    touchPoints.delete(e.pointerId);
+    if(touchPoints.size===1){ const a=[...touchPoints.values()][0]; touchGesture={x:a.x,y:a.y}; }
+    else touchGesture=touchPoints.size>=2?touchSnapshot():null;
+  }else mouseDrag=null;
+}
+cv.addEventListener("pointerup",endPointer);
+cv.addEventListener("pointercancel",endPointer);
+cv.addEventListener("contextmenu",e=>e.preventDefault());
 cv.addEventListener("wheel",e=>{
   e.preventDefault();
-  orbit.dist=Math.max(8, Math.min(400, orbit.dist*(1+Math.sign(e.deltaY)*0.12)));
-  autoFit=false;
+  if(running||finished) return;
+  const dy=Math.max(-120,Math.min(120,e.deltaY));
+  zoomAt(e.clientX,e.clientY,Math.exp(dy*0.0018));
 },{passive:false});
-cv.addEventListener("touchstart",e=>{ if(e.touches.length===2){ pinch=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); } },{passive:true});
-cv.addEventListener("touchmove",e=>{
-  if(e.touches.length===2&&pinch){
-    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
-    orbit.dist=Math.max(8,Math.min(400, orbit.dist*pinch/d)); pinch=d; autoFit=false;
-  }
-},{passive:true});
-cv.addEventListener("touchend",()=>pinch=null);
 
 /* =========================================================================
    5.5 音（Web Audio API でその場で合成。音声ファイルは使わない）
@@ -774,6 +1082,7 @@ function startRun(){
   document.getElementById("run").style.display="none";
   document.getElementById("reset").style.display="";
   document.getElementById("side").classList.add("run");
+  document.getElementById("stage").classList.add("run");
 }
 function stopRun(){
   running=false; finished=false;
@@ -781,6 +1090,7 @@ function stopRun(){
   document.getElementById("run").style.display="";
   document.getElementById("reset").style.display="none";
   document.getElementById("side").classList.remove("run");
+  document.getElementById("stage").classList.remove("run");
   chase.pos=null; hideMsg();
 }
 function physics(dt){
@@ -848,6 +1158,7 @@ let last=performance.now();
 function frame(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
   resize();
+  updateCameraTween(now);
 
   if(running) physics(dt);
 
@@ -880,10 +1191,7 @@ function frame(now){
       flash("もどっている…", "スピードが足りなかったみたい。<br>スタートを高くするか、ループを小さくしてみよう。");
     } else if(running && !finished && Math.abs(car.v)>=6){ hideMsg(); }
   }else{
-    const c=Math.cos(orbit.pitch);
-    const eye=[orbit.ctr[0]+Math.sin(orbit.yaw)*c*orbit.dist,
-               orbit.ctr[1]+Math.sin(orbit.pitch)*orbit.dist,
-               orbit.ctr[2]+Math.cos(orbit.yaw)*c*orbit.dist];
+    const eye=orbitEye();
     view=mLookAt(eye,orbit.ctr,[0,1,0]); camPos=eye;
     proj=mPersp(1.02,asp,0.12,900);
     document.getElementById("hSpd").textContent="0";
@@ -910,6 +1218,7 @@ function frame(now){
   gl.uniform3f(L3.cam,camPos[0],camPos[1],camPos[2]);
   gl.uniform3f(L3.fog,0.80,0.89,0.96);
   draw(mGround,MI);
+  if(!running&&!finished) draw(mGuide,MI);
   draw(mTrack,MI);
   if(running||finished){
     for(let i=0;i<3;i++){
@@ -931,7 +1240,7 @@ gl.clearColor(0.80,0.89,0.96,1);
 /* =========================================================================
    8. UI
    ========================================================================= */
-let selected=-1;
+let selected=-1, lastActionWasLink=false;
 
 function buildPalette(){
   const boxes={basic:document.getElementById("g_basic"), sys:document.getElementById("g_sys"),
@@ -941,7 +1250,7 @@ function buildPalette(){
     const b=document.createElement("button");
     b.className="part";
     b.innerHTML=`<span class="ic">${d.ic}</span><span>${d.n}</span>`;
-    b.onclick=()=>{ pieces.push(newPiece(key)); selected=pieces.length-1; autoFit=true; renderList(); rebuild(); };
+    b.onclick=()=>{ pieces.push(newPiece(key)); selected=pieces.length-1; lastActionWasLink=false; rebuild(); renderList(); };
     boxes[d.g].appendChild(b);
   }
 }
@@ -959,12 +1268,39 @@ function renderList(){
     row.innerHTML=`<span class="no">${i+1}</span><span class="ic">${d.ic}</span><span class="nm">${d.n}</span>`;
     const mk=(txt,cls,fn)=>{ const b=document.createElement("button"); b.textContent=txt; if(cls)b.className=cls;
       b.onclick=(e)=>{e.stopPropagation(); fn();}; row.appendChild(b); };
-    mk("↑",null,()=>{ if(i>0){ [pieces[i-1],pieces[i]]=[pieces[i],pieces[i-1]]; selected=i-1; renderList(); rebuild(); } });
-    mk("↓",null,()=>{ if(i<pieces.length-1){ [pieces[i+1],pieces[i]]=[pieces[i],pieces[i+1]]; selected=i+1; renderList(); rebuild(); } });
-    mk("✕","del",()=>{ pieces.splice(i,1); selected=Math.min(selected,pieces.length-1); renderList(); rebuild(); });
+    mk("↑",null,()=>{ if(i>0){ [pieces[i-1],pieces[i]]=[pieces[i],pieces[i-1]]; selected=i-1; lastActionWasLink=false; rebuild(); renderList(); } });
+    mk("↓",null,()=>{ if(i<pieces.length-1){ [pieces[i+1],pieces[i]]=[pieces[i],pieces[i+1]]; selected=i+1; lastActionWasLink=false; rebuild(); renderList(); } });
+    mk("✕","del",()=>{ pieces.splice(i,1); selected=Math.min(selected,pieces.length-1); lastActionWasLink=false; rebuild(); renderList(); });
     row.onclick=()=>{ selected=i; renderList(); };
     el.appendChild(row);
   });
+  if(autoLink){
+    const group=document.createElement("div"); group.className="linkGroup";
+    const head=document.createElement("div"); head.className="linkHead";
+    head.innerHTML=`<span>${autoLink.collapsed?"▶":"▼"}</span><span class="nm">${connectionStale?"⚠ 自動つなぎ（つなぎ直しが必要）":"🔗 自動つなぎ"}</span><span>${Math.round(autoLink.length||0)}m</span>`;
+    const del=document.createElement("button"); del.textContent="✕"; del.title="自動つなぎを削除";
+    del.onclick=e=>{e.stopPropagation();removeConnection();}; head.appendChild(del);
+    head.onclick=()=>{autoLink.collapsed=!autoLink.collapsed;renderList();}; group.appendChild(head);
+    if(!autoLink.collapsed){
+      const body=document.createElement("div"); body.className="linkBody";
+      body.innerHTML='<div class="steps">① ゴールの向きをなめらかに戻す<br>② コースの外側を安全に回る<br>③ 同じ向きで緑の駅へ入る</div>';
+      const fld=(name,min,max,step,value,onchange)=>{
+        const f=document.createElement("div"); f.className="fld";
+        f.innerHTML=`<label><span>${name}</span><b>${value}</b></label>`;
+        const r=document.createElement("input"); r.type="range"; r.min=min; r.max=max; r.step=step; r.value=value;
+        r.onchange=()=>onchange(Number(r.value)); f.appendChild(r); body.appendChild(f);
+      };
+      fld("まわり道の大きさ",0.8,1.8,0.1,autoLink.marginScale,v=>createConnection(autoLink.variant,{marginScale:v,liftHeight:autoLink.liftHeight}));
+      fld("つなぎ部分の高さ",0,20,2,autoLink.liftHeight,v=>createConnection(autoLink.variant,{marginScale:autoLink.marginScale,liftHeight:v}));
+      const bs=document.createElement("div"); bs.className="btns";
+      const alt=document.createElement("button"); alt.className="btn"; alt.textContent="↔ 別のつなぎ方";
+      alt.onclick=()=>createConnection((autoLink.variant+1)%2,{marginScale:autoLink.marginScale,liftHeight:autoLink.liftHeight});
+      const again=document.createElement("button"); again.className="btn"; again.textContent="↻ つなぎ直す";
+      again.onclick=()=>createConnection(autoLink.variant,{marginScale:autoLink.marginScale,liftHeight:autoLink.liftHeight});
+      bs.append(alt,again); body.appendChild(bs); group.appendChild(body);
+    }
+    el.appendChild(group);
+  }
   renderEditor();
 }
 function renderEditor(){
@@ -980,7 +1316,7 @@ function renderEditor(){
     f.innerHTML=`<label><span>${LABEL[key]}</span><b>${pc[key]}${UNIT[key]}</b></label>`;
     const r=document.createElement("input");
     r.type="range"; r.min=mn; r.max=mx; r.step=st; r.value=pc[key];
-    r.oninput=()=>{ pc[key]=Number(r.value); f.querySelector("b").textContent=pc[key]+UNIT[key]; rebuild(); };
+    r.oninput=()=>{ pc[key]=Number(r.value); f.querySelector("b").textContent=pc[key]+UNIT[key]; lastActionWasLink=false; rebuild(); };
     f.appendChild(r); ed.appendChild(f);
   }
 }
@@ -988,15 +1324,21 @@ function renderEditor(){
 document.getElementById("sh").oninput=e=>{
   startY=Number(e.target.value);
   document.getElementById("shV").textContent=startY+" m";
+  lastActionWasLink=false;
   rebuild();
 };
-document.getElementById("undo").onclick=()=>{ pieces.pop(); selected=pieces.length-1; autoFit=true; renderList(); rebuild(); };
+document.getElementById("undo").onclick=()=>{
+  if(lastActionWasLink&&autoLink) autoLink=null;
+  else pieces.pop();
+  selected=pieces.length-1; lastActionWasLink=false; rebuild(); renderList();
+};
 document.getElementById("clear").onclick=()=>{ if(pieces.length&&!confirm("コースをぜんぶ消しますか？")) return;
-  pieces=[]; selected=-1; autoFit=true; renderList(); rebuild(); };
+  pieces=[]; autoLink=null; selected=-1; lastActionWasLink=false; rebuild(); renderList(); fitCamera(true); };
 document.getElementById("save").onclick=()=>{
   const b=document.getElementById("save"), t="💾 ほぞん";
   try{
-    localStorage.setItem("coaster_v1", JSON.stringify({startY,pieces}));
+    const link=courseConnected&&autoLink?{variant:autoLink.variant,marginScale:autoLink.marginScale,liftHeight:autoLink.liftHeight}:null;
+    localStorage.setItem("coaster_v1", JSON.stringify({startY,pieces,autoLink:link}));
     b.textContent="✓ ほぞんした"; setTimeout(()=>b.textContent=t,1200);
   }catch(e){ alert("このひらき方ではコースをほぞんできません。"); }
 };
@@ -1004,11 +1346,15 @@ document.getElementById("load").onclick=()=>{
   let s=null;
   try{ s=localStorage.getItem("coaster_v1"); }catch(e){}
   if(!s){ alert("ほぞんされたコースがありません。"); return; }
-  try{ const o=JSON.parse(s); stopRun(); loadCourse(o.pieces, o.startY); }
+  try{ const o=JSON.parse(s); stopRun(); loadCourse(o.pieces, o.startY, o.autoLink); }
   catch(e){ alert("ほぞんしたコースを読みこめませんでした。"); }
 };
 document.getElementById("run").onclick=startRun;
 document.getElementById("reset").onclick=stopRun;
+document.getElementById("connect").onclick=()=>createConnection(autoLink?autoLink.variant:undefined);
+document.getElementById("viewStart").onclick=()=>focusFrame(frames[0]);
+document.getElementById("viewGoal").onclick=()=>focusFrame(courseConnected?frames[frames.length-1]:userEndFrame);
+document.getElementById("viewAll").onclick=()=>fitCamera(true);
 document.querySelectorAll("#camseg button").forEach(b=>{
   b.onclick=()=>{
     document.querySelectorAll("#camseg button").forEach(x=>x.classList.remove("on"));
@@ -1042,7 +1388,8 @@ const PRESETS={
       ["curveR",{len:16,yaw:120,bank:30,pitch:-12}],["curveR",{len:16,yaw:120,bank:30,pitch:-12}],
       ["hill",{len:24,hill:18}],["brake",{}]]}
 };
-function loadCourse(list, y){
+function loadCourse(list, y, linkOpts){
+  autoLink=null;
   pieces=(list||[]).map(o=>{
     if(Array.isArray(o)){ const p=newPiece(o[0]); Object.assign(p,o[1]); return p; }
     const p=newPiece(o.t); Object.assign(p,o); return p;
@@ -1050,17 +1397,22 @@ function loadCourse(list, y){
   startY=(y!==undefined)?y:startY;
   document.getElementById("sh").value=startY;
   document.getElementById("shV").textContent=startY+" m";
-  selected=-1; autoFit=true; renderList(); rebuild();
+  selected=-1; lastActionWasLink=false; rebuild(); renderList();
+  if(linkOpts) createConnection(linkOpts.variant||0,{marginScale:linkOpts.marginScale||1,liftHeight:linkOpts.liftHeight||0});
+  else fitCamera(true);
 }
 {
   const sel=document.getElementById("preset");
   for(const k in PRESETS){ const o=document.createElement("option"); o.value=k; o.textContent=k; sel.appendChild(o); }
-  sel.onchange=()=>{ const k=sel.value; if(!k) return; stopRun(); loadCourse(PRESETS[k].p, PRESETS[k].y); sel.value=""; };
+  sel.onchange=()=>{ const k=sel.value; if(!k) return;
+    if((pieces.length||autoLink)&&!confirm("いま作っているコースをおてほんに入れかえますか？")){ sel.value=""; return; }
+    stopRun(); loadCourse(PRESETS[k].p, PRESETS[k].y); sel.value="";
+  };
 }
 
 /* --- 起動 --- */
 buildPalette();
-loadCourse(PRESETS["れんしゅうコース"].p, PRESETS["れんしゅうコース"].y);
+loadCourse([],8);
 requestAnimationFrame(frame);
 </script>
 </body>
