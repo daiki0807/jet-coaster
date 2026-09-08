@@ -51,6 +51,14 @@
   .row button:hover{background:#cfdcec; color:var(--ink)}
   .row button.del:hover{background:#ffdedb; color:var(--danger)}
   .empty{font-size:12px; color:var(--sub); padding:10px; text-align:center; background:#f5f8fc; border-radius:8px}
+  /* ---------- ミッション ---------- */
+  .misList{display:grid; grid-template-columns:1fr 1fr; gap:4px}
+  .mis{
+    display:flex; align-items:center; gap:5px; padding:6px 7px; border-radius:8px;
+    background:#f5f8fc; border:1px solid var(--line); font-size:11.5px; color:var(--sub); line-height:1.25;
+  }
+  .mis.done{background:#edf9f3; border-color:#9ad8bb; color:#16794b; font-weight:bold}
+  .sec>.t .cnt{color:var(--accent)}
   /* ---------- スライダー ---------- */
   .fld{margin-bottom:9px}
   .fld label{display:flex; justify-content:space-between; font-size:12px; margin-bottom:3px}
@@ -121,6 +129,19 @@
   }
   #msg .big{font-size:24px; font-weight:bold; margin-bottom:6px}
   #msg .sm{font-size:13px; color:var(--sub); line-height:1.7}
+  #msg .rank{font-size:24px; letter-spacing:3px; color:#f2a900; margin-bottom:4px}
+  #msg .rank .off{color:#dfe6ef}
+  #msg .total{font-size:15px; color:var(--sub)}
+  #msg .total b{font-size:30px; color:var(--accent); font-variant-numeric:tabular-nums; margin:0 3px}
+  #msg .score{
+    display:grid; grid-template-columns:auto auto auto; gap:2px 14px; margin:9px auto 2px;
+    font-size:13px; text-align:left; color:var(--ink); width:max-content;
+  }
+  #msg .score .m{color:var(--sub); font-variant-numeric:tabular-nums}
+  #msg .score .p{text-align:right; font-weight:bold; font-variant-numeric:tabular-nums}
+  #msg .score .pen{color:var(--danger)}
+  #msg .cleared{margin-top:9px; font-size:13px; color:#16794b; font-weight:bold; line-height:1.6}
+  #msg .next{margin-top:7px; font-size:12.5px; color:var(--sub)}
   #hint{right:12px; bottom:12px; font-size:11px; color:#4a6285; background:rgba(255,255,255,.8);
     padding:6px 10px; border-radius:8px}
   #guideInfo{right:12px; bottom:48px; font-size:12px; font-weight:bold; color:#335b83;
@@ -158,6 +179,11 @@
         <label><span>出発する高さ</span><b id="shV">8 m</b></label>
         <input type="range" id="sh" min="0" max="40" step="1" value="8">
       </div>
+    </div>
+
+    <div class="sec">
+      <div class="t">ミッション <span class="cnt" id="misCount"></span></div>
+      <div class="misList" id="missions"></div>
     </div>
 
     <div class="sec"><div class="t">きほんのパーツ</div><div class="grid" id="g_basic"></div></div>
@@ -227,6 +253,7 @@
     <div><div class="k">スピード</div><div class="v" id="hSpd">0</div><div class="u">km/h</div></div>
     <div><div class="k">たかさ</div><div class="v" id="hHgt">0</div><div class="u">m</div></div>
     <div><div class="k">Gフォース</div><div class="v" id="hG">1.0</div><div class="u">G</div></div>
+    <div><div class="k">ふわっと</div><div class="v" id="hAir">0.0</div><div class="u">びょう</div></div>
     <div><div class="k">コースの長さ</div><div class="v" id="hLen">0</div><div class="u">m</div></div>
   </div>
   <div class="ov" id="msg"><div class="big"></div><div class="sm"></div></div>
@@ -600,7 +627,7 @@ const COL={
   car:[0.90,0.22,0.20], carTop:[1.0,0.85,0.25], head:[1.0,0.83,0.68],
   trunk:[0.45,0.32,0.22], leaf:[0.24,0.60,0.32], leaf2:[0.30,0.66,0.36]
 };
-let mTrack=null, mGround=null, mCar=null, mGuide=null;
+let mTrack=null, mGround=null, mCar=null, mCarAir=null, mGuide=null;
 
 function buildGround(){
   const mb=new MB();
@@ -672,7 +699,7 @@ function buildGuide(){
   }
   return upload(mb);
 }
-function buildCar(){
+function buildCar(banzai){
   const mb=new MB();
   const R=[1,0,0],U=[0,1,0],Fw=[0,0,1];
   mb.box([0,0.42,0],R,U,Fw,[0.62,0.34,1.25],COL.car);         // 車体
@@ -682,6 +709,8 @@ function buildCar(){
   for(const z of [0.55,-0.45]) for(const x of [-0.28,0.28]){
     mb.box([x,0.95,z],R,U,Fw,[0.16,0.17,0.16],COL.head);      // 乗っている人
     mb.box([x,0.66,z],R,U,Fw,[0.20,0.16,0.16],[0.25,0.45,0.85]);
+    // ふわっとしたら「バンザイ！」
+    if(banzai) for(const sx of [-1,1]) mb.box([x+sx*0.13,1.02,z],R,U,Fw,[0.06,0.26,0.06],COL.head);
   }
   return upload(mb);
 }
@@ -846,7 +875,8 @@ function updateConnectionUI(){
   if(head&&connectionStale) head.textContent="⚠ 自動つなぎ（つなぎ直しが必要）";
 }
 mGround=buildGround();
-mCar=buildCar();
+mCar=buildCar(false);
+mCarAir=buildCar(true);
 
 /* =========================================================================
    5. カメラ
@@ -1079,7 +1109,9 @@ try{ Snd.on = localStorage.getItem("coaster_snd")!=="0"; }catch(e){}
    6. 走行シミュレーション（位置エネルギー ⇄ 運動エネルギー）
    ========================================================================= */
 const G=9.8, LIFT_SPEED=4.5, STATION_SPEED=3.0;
-let running=false, car={s:0,v:0}, stats={t:0,vmax:0,gmax:1,gmin:1,back:false,stall:0,backT:0}, finished=false;
+let running=false, car={s:0,v:0}, stats={t:0,vmax:0,gmax:1,gmin:1,air:0,back:false,stall:0,backT:0}, finished=false;
+const AIR_G=0.3;    // これより小さいGは「ふわっと」
+const SCARY_G=6.0;  // これをこえると「こわすぎ」で減点
 // --- 早送り・まきもどし ---
 const PLAY_SPEEDS=[-1,1,2,4];          // -1 は「まきもどし」
 const REWIND_RATE=3;                   // まきもどしのはやさ（ふつうの3ばい）
@@ -1092,7 +1124,7 @@ function startRun(){
   running=true; finished=false;
   car={s:0.2, v:1.0};
   history.length=0; setPlaySpeed(1);
-  stats={t:0,vmax:0,gmax:1,gmin:1,back:false,stall:0,backT:0};
+  stats={t:0,vmax:0,gmax:1,gmin:1,air:0,back:false,stall:0,backT:0};
   hideMsg();
   Snd.start();
   document.getElementById("run").style.display="none";
@@ -1124,6 +1156,7 @@ function physics(dt){
     if(fr.lift && car.v<LIFT_SPEED) car.v=LIFT_SPEED;    // チェーンで巻き上げ
     if(fr.st && car.v<STATION_SPEED) car.v=STATION_SPEED; // 駅のタイヤで押し出す
     car.s += car.v*h;
+    if(car.s>PLATFORM && Math.abs(car.v)>2 && currentG(fr)<AIR_G) stats.air+=h; // ふわっとしていた時間
     if(car.v<-0.4) stats.back=true;
     if(car.s<0.05){ car.s=0.05; if(car.v<0) car.v=0; }
     // 一周できずにスタートまで戻ってきてしまった
@@ -1145,12 +1178,12 @@ function recordHistory(){
   const last=history[history.length-1];
   if(last && stats.t-last.t<HIST_STEP) return;
   history.push({s:car.s, v:car.v, t:stats.t, vmax:stats.vmax, gmax:stats.gmax, gmin:stats.gmin,
-                back:stats.back, stall:stats.stall, backT:stats.backT});
+                air:stats.air, back:stats.back, stall:stats.stall, backT:stats.backT});
   if(history.length>HIST_MAX) history.splice(0,1000);
 }
 function applySnapshot(sn){
   car.s=sn.s; car.v=sn.v;
-  stats.t=sn.t; stats.vmax=sn.vmax; stats.gmax=sn.gmax; stats.gmin=sn.gmin;
+  stats.t=sn.t; stats.vmax=sn.vmax; stats.gmax=sn.gmax; stats.gmin=sn.gmin; stats.air=sn.air;
   stats.back=sn.back; stats.stall=sn.stall; stats.backT=sn.backT;
 }
 // まきもどし：記録した走りを逆にたどる（物理を逆算するのではなく再生をもどす）
@@ -1185,19 +1218,89 @@ function finishRun(){
   finished=true; running=false;
   Snd.silence(); Snd.fanfare();
   document.getElementById("side").classList.remove("run");
+  const sc=scoreRun(true), got=checkMissions(true);
   flash("ゴール！ 🎉",
-    `かかった時間 ${stats.t.toFixed(1)} 秒　／　最高スピード ${(stats.vmax*3.6).toFixed(0)} km/h<br>`+
-    `いちばん重いG ${stats.gmax.toFixed(1)} G　／　いちばん軽いG ${stats.gmin.toFixed(1)} G<br>`+
-    `コースの長さ ${Math.round(totalLen)} m`);
+    scoreHTML(sc)+
+    `<div class="next">かかった時間 ${stats.t.toFixed(1)} 秒　／　いちばん軽いG ${stats.gmin.toFixed(1)} G</div>`+
+    missionHTML(got));
 }
 function failRun(why){
   if(finished) return;
   finished=true; running=false;
   Snd.silence(); Snd.sad();
   document.getElementById("side").classList.remove("run");
+  const got=checkMissions(false);
   flash(why, "スピードが足りません。<br>"+
     "① スタートの高さを上げる　② まきあげを長く・急にする<br>"+
-    "③ 高いところにある山やループを小さくする");
+    "③ 高いところにある山やループを小さくする"+
+    `<div class="next">ここまでの記録：最高 ${(stats.vmax*3.6).toFixed(0)} km/h ／ ふわっと ${stats.air.toFixed(1)} 秒</div>`+
+    missionHTML(got));
+}
+/* --- スリル点数 --- */
+function scoreRun(goal){
+  const kmh=stats.vmax*3.6;
+  const sp=Math.round(kmh*2);                                   // はやさ
+  const air=Math.round(stats.air*120);                          // ふわっと
+  const thrill=Math.round(Math.max(0,Math.min(stats.gmax,5)-1)*70); // ドキドキ（5Gまで）
+  const len=Math.round(totalLen*0.6);                           // ながさ
+  const bonus=goal?300:0;
+  const over=stats.gmax>SCARY_G ? -Math.round((stats.gmax-SCARY_G)*150) : 0; // こわすぎは減点
+  const rows=[["💨 はやさ", kmh.toFixed(0)+" km/h", sp],
+              ["🎈 ふわっと", stats.air.toFixed(1)+" 秒", air],
+              ["😆 ドキドキ", stats.gmax.toFixed(1)+" G", thrill],
+              ["📏 ながさ", Math.round(totalLen)+" m", len]];
+  if(goal) rows.push(["🏁 ゴール", "できた！", bonus]);
+  if(over) rows.push(["⚠ こわすぎ", stats.gmax.toFixed(1)+" G", over]);
+  const total=Math.max(0, sp+air+thrill+len+bonus+over);
+  const stars = total>=1350?5 : total>=1050?4 : total>=800?3 : total>=500?2 : 1;
+  return {total, rows, stars};
+}
+function scoreHTML(sc){
+  return `<div class="rank">${"★".repeat(sc.stars)}<span class="off">${"★".repeat(5-sc.stars)}</span></div>`+
+    `<div class="total">スリル点数 <b>${sc.total}</b> てん</div>`+
+    '<div class="score">'+sc.rows.map(r=>
+      `<div>${r[0]}</div><div class="m">${r[1]}</div><div class="p${r[2]<0?" pen":""}">${r[2]>0?"+":""}${r[2]}</div>`
+    ).join("")+'</div>';
+}
+/* --- ミッション --- */
+const MISSIONS=[
+  {id:"goal",   ic:"🏁", n:"ゴールする",          ok:r=>r.goal},
+  {id:"fast",   ic:"💨", n:"60km/h をこえる",     ok:r=>r.kmh>=60},
+  {id:"air",    ic:"🎈", n:"ふわっと1.5秒",       ok:r=>r.air>=1.5},
+  {id:"loop",   ic:"⭕", n:"ループを回ってゴール", ok:r=>r.goal&&r.has("loop")},
+  {id:"safe",   ic:"🛡", n:"4Gをこえずにゴール",  ok:r=>r.goal&&r.gmax<=4},
+  {id:"nolift", ic:"⛰", n:"まきあげなしでゴール", ok:r=>r.goal&&!r.has("lift")},
+];
+let missionsDone=[];
+try{ missionsDone=JSON.parse(localStorage.getItem("coaster_missions")||"[]"); }catch(e){}
+function checkMissions(goal){
+  const r={goal, kmh:stats.vmax*3.6, air:stats.air, gmax:stats.gmax,
+           has:t=>pieces.some(p=>p.t===t)};
+  const got=[];
+  for(const m of MISSIONS){
+    if(missionsDone.includes(m.id) || !m.ok(r)) continue;
+    missionsDone.push(m.id); got.push(m);
+  }
+  if(got.length){
+    try{ localStorage.setItem("coaster_missions", JSON.stringify(missionsDone)); }catch(e){}
+    renderMissions();
+  }
+  return got;
+}
+function missionHTML(got){
+  if(!got.length) return "";
+  return '<div class="cleared">🎉 ミッションクリア！<br>'+got.map(m=>m.ic+" "+m.n).join("<br>")+"</div>";
+}
+function renderMissions(){
+  const box=document.getElementById("missions");
+  box.innerHTML="";
+  for(const m of MISSIONS){
+    const d=document.createElement("div");
+    d.className="mis"+(missionsDone.includes(m.id)?" done":"");
+    d.textContent=(missionsDone.includes(m.id)?"✅ ":m.ic+" ")+m.n;
+    box.appendChild(d);
+  }
+  document.getElementById("misCount").textContent=`${missionsDone.length}/${MISSIONS.length}`;
 }
 function flash(big,sm){
   const m=document.getElementById("msg");
@@ -1241,6 +1344,7 @@ function frame(now){
     // HUD
     document.getElementById("hSpd").textContent=(Math.abs(car.v)*3.6).toFixed(0);
     document.getElementById("hHgt").textContent=fr.p[1].toFixed(1);
+    document.getElementById("hAir").textContent=stats.air.toFixed(1);
     const g=currentG(fr), ge=document.getElementById("hG");
     ge.textContent=g.toFixed(1);
     ge.style.color = g>4.0 ? "#e0463c" : (g<0.3 ? "#2f7de1" : "");
@@ -1254,6 +1358,7 @@ function frame(now){
     document.getElementById("hSpd").textContent="0";
     document.getElementById("hHgt").textContent=startY.toFixed(1);
     document.getElementById("hG").textContent="1.0";
+    document.getElementById("hAir").textContent="0.0";
   }
   VP=mMul(proj,view);
 
@@ -1281,7 +1386,7 @@ function frame(now){
     for(let i=0;i<3;i++){
       if(camMode===1&&i===0) continue;             // 一人称のときは自分の車をかくさない
       const fr=sampleAt(Math.max(0.05, car.s-i*2.9));
-      draw(mCar, mFrame(fr.r,fr.u,fr.f,V.add(fr.p,V.mul(fr.u,0.18))));
+      draw(currentG(fr)<AIR_G ? mCarAir : mCar, mFrame(fr.r,fr.u,fr.f,V.add(fr.p,V.mul(fr.u,0.18))));
     }
   }else if(frames.length){
     const fr=sampleAt(0.2);
@@ -1406,6 +1511,7 @@ document.getElementById("load").onclick=()=>{
   try{ const o=JSON.parse(s); stopRun(); loadCourse(o.pieces, o.startY, o.autoLink); }
   catch(e){ alert("ほぞんしたコースを読みこめませんでした。"); }
 };
+renderMissions();
 document.getElementById("run").onclick=startRun;
 document.getElementById("reset").onclick=stopRun;
 document.querySelectorAll("#speedseg button").forEach(b=>{
