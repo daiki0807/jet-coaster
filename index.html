@@ -88,6 +88,9 @@
     font-family:inherit; color:var(--sub); font-weight:bold;
   }
   .seg button.on{background:var(--accent); color:#fff}
+  .seg button.on.rew{background:var(--accent2)}
+  .runOnly{display:none}
+  #stage.run .runOnly{display:flex}
   .viewnav{display:flex; gap:5px; padding:5px; background:rgba(255,255,255,.94); border-radius:11px; box-shadow:var(--shadow)}
   .viewnav button{
     border:none; border-radius:8px; padding:7px 9px; background:#f1f5fa; color:var(--ink);
@@ -139,6 +142,7 @@
     #warn{top:112px; max-width:calc(100% - 24px)}
     .viewnav{order:5; width:100%; max-width:340px}
     .viewnav button{flex:1; padding:7px 5px}
+    #speedseg button{padding:10px 9px; font-size:12px}
   }
 </style>
 </head>
@@ -201,6 +205,12 @@
   <div class="ov" id="topbar">
     <button class="tb go" id="run">▶ 走らせる</button>
     <button class="tb stop" id="reset" style="display:none">■ もどる</button>
+    <div class="seg runOnly" id="speedseg" aria-label="走りのはやさ">
+      <button data-speed="-1" title="まきもどし（←キー）">⏪ まきもどし</button>
+      <button data-speed="1" class="on" title="ふつうのはやさ">▶ ふつう</button>
+      <button data-speed="2" title="2ばいの早送り（→キー）">⏩ ×2</button>
+      <button data-speed="4" title="4ばいの早送り（→キー）">⏩⏩ ×4</button>
+    </div>
     <div class="seg" id="camseg">
       <button data-cam="3" class="on">🎥 三人称</button>
       <button data-cam="1">👤 一人称</button>
@@ -1070,12 +1080,18 @@ try{ Snd.on = localStorage.getItem("coaster_snd")!=="0"; }catch(e){}
    ========================================================================= */
 const G=9.8, LIFT_SPEED=4.5, STATION_SPEED=3.0;
 let running=false, car={s:0,v:0}, stats={t:0,vmax:0,gmax:1,gmin:1,back:false,stall:0,backT:0}, finished=false;
+// --- 早送り・まきもどし ---
+const PLAY_SPEEDS=[-1,1,2,4];          // -1 は「まきもどし」
+const REWIND_RATE=3;                   // まきもどしのはやさ（ふつうの3ばい）
+const HIST_STEP=0.01, HIST_MAX=40000;  // 走ったようすを 0.01 秒ごとに記録しておく
+let playSpeed=1, history=[];
 
 function startRun(){
   if(!pieces.length){ flash("パーツをおいてね","左のパーツをクリックするとコースがのびます"); return; }
   rebuild();
   running=true; finished=false;
   car={s:0.2, v:1.0};
+  history.length=0; setPlaySpeed(1);
   stats={t:0,vmax:0,gmax:1,gmin:1,back:false,stall:0,backT:0};
   hideMsg();
   Snd.start();
@@ -1086,6 +1102,7 @@ function startRun(){
 }
 function stopRun(){
   running=false; finished=false;
+  history.length=0; setPlaySpeed(1);
   Snd.silence();
   document.getElementById("run").style.display="";
   document.getElementById("reset").style.display="none";
@@ -1094,6 +1111,7 @@ function stopRun(){
   chase.pos=null; hideMsg();
 }
 function physics(dt){
+  recordHistory();
   const steps=Math.min(40, Math.ceil(dt/0.002));
   const h=dt/steps;
   for(let i=0;i<steps;i++){
@@ -1121,6 +1139,44 @@ function physics(dt){
   if(car.v<-0.5) stats.backT+=dt;
   if(stats.stall>2.5) failRun("とちゅうで止まってしまった…");
   else if(stats.backT>4) failRun("のぼりきれずに、もどってしまった…");
+}
+// いまの走りのようすを記録（まきもどしのため）
+function recordHistory(){
+  const last=history[history.length-1];
+  if(last && stats.t-last.t<HIST_STEP) return;
+  history.push({s:car.s, v:car.v, t:stats.t, vmax:stats.vmax, gmax:stats.gmax, gmin:stats.gmin,
+                back:stats.back, stall:stats.stall, backT:stats.backT});
+  if(history.length>HIST_MAX) history.splice(0,1000);
+}
+function applySnapshot(sn){
+  car.s=sn.s; car.v=sn.v;
+  stats.t=sn.t; stats.vmax=sn.vmax; stats.gmax=sn.gmax; stats.gmin=sn.gmin;
+  stats.back=sn.back; stats.stall=sn.stall; stats.backT=sn.backT;
+}
+// まきもどし：記録した走りを逆にたどる（物理を逆算するのではなく再生をもどす）
+function rewind(dt){
+  if(!history.length){ setPlaySpeed(1); return; }
+  const target=stats.t-dt*REWIND_RATE;
+  while(history.length>1 && history[history.length-1].t>target) history.pop();
+  applySnapshot(history[history.length-1]);
+  if(history.length<=1){ history.length=0; setPlaySpeed(1); }   // スタートまでもどった
+}
+function setPlaySpeed(sp){
+  playSpeed=sp;
+  document.querySelectorAll("#speedseg button").forEach(b=>{
+    const on=Number(b.dataset.speed)===sp;
+    b.classList.toggle("on",on);
+    b.classList.toggle("rew",on&&sp<0);
+  });
+  if(sp<0){   // まきもどしを選んだら、ゴール／失敗の表示を消して走行中にもどす
+    if(finished){ finished=false; document.getElementById("side").classList.add("run"); }
+    running=true; hideMsg();
+  }
+}
+function shiftPlaySpeed(d){
+  if(!running&&!finished) return;
+  const i=PLAY_SPEEDS.indexOf(playSpeed);
+  setPlaySpeed(PLAY_SPEEDS[Math.max(0,Math.min(PLAY_SPEEDS.length-1,i+d))]);
 }
 // 座席が受ける上下方向のG（1.0＝ふつう、0に近い＝ふわっと浮く、大きい＝からだが重い）
 function currentG(fr){ return fr.u[1] + car.v*car.v*fr.ku/G; }
@@ -1160,15 +1216,16 @@ function frame(now){
   resize();
   updateCameraTween(now);
 
-  if(running) physics(dt);
+  if(playSpeed<0 && (running||finished)) rewind(dt);
+  else if(running){ for(let k=0;k<playSpeed && running;k++) physics(dt); }
 
   // --- カメラ ---
   const asp=Math.max(0.2, cv.width/cv.height);
   let view, proj;
   if(running||finished){
     const fr=sampleAt(car.s);
-    stats.gmax=Math.max(stats.gmax,currentG(fr));
-    Snd.update(dt, car.v, fr, running);
+    if(running&&playSpeed>0) stats.gmax=Math.max(stats.gmax,currentG(fr));
+    Snd.update(dt*Math.max(1,playSpeed), car.v, fr, running&&playSpeed>0);
     if(camMode===1){
       const eye=V.add(fr.p, V.add(V.mul(fr.u,0.95), V.mul(fr.f,0.55)));
       view=mLookAt(eye, V.add(eye,fr.f), fr.u); camPos=eye;
@@ -1187,9 +1244,9 @@ function frame(now){
     const g=currentG(fr), ge=document.getElementById("hG");
     ge.textContent=g.toFixed(1);
     ge.style.color = g>4.0 ? "#e0463c" : (g<0.3 ? "#2f7de1" : "");
-    if(running && stats.back && Math.abs(car.v)<6){
+    if(running && playSpeed>0 && stats.back && Math.abs(car.v)<6){
       flash("もどっている…", "スピードが足りなかったみたい。<br>スタートを高くするか、ループを小さくしてみよう。");
-    } else if(running && !finished && Math.abs(car.v)>=6){ hideMsg(); }
+    } else if(running && (playSpeed<0 || (!finished && Math.abs(car.v)>=6))){ hideMsg(); }
   }else{
     const eye=orbitEye();
     view=mLookAt(eye,orbit.ctr,[0,1,0]); camPos=eye;
@@ -1351,6 +1408,9 @@ document.getElementById("load").onclick=()=>{
 };
 document.getElementById("run").onclick=startRun;
 document.getElementById("reset").onclick=stopRun;
+document.querySelectorAll("#speedseg button").forEach(b=>{
+  b.onclick=()=>{ if(!running&&!finished) return; setPlaySpeed(Number(b.dataset.speed)); };
+});
 document.getElementById("connect").onclick=()=>createConnection(autoLink?autoLink.variant:undefined);
 document.getElementById("viewStart").onclick=()=>focusFrame(frames[0]);
 document.getElementById("viewGoal").onclick=()=>focusFrame(courseConnected?frames[frames.length-1]:userEndFrame);
@@ -1372,6 +1432,8 @@ addEventListener("keydown",e=>{
   if(e.key==="v"||e.key==="V"){ document.querySelector(`#camseg button[data-cam="${camMode===3?1:3}"]`).click(); }
   if(e.key==="m"||e.key==="M"){ sndBtn.click(); }
   if(e.key===" "){ e.preventDefault(); running?stopRun():startRun(); }
+  if(e.key==="ArrowLeft"&&(running||finished)){ e.preventDefault(); shiftPlaySpeed(-1); }
+  if(e.key==="ArrowRight"&&(running||finished)){ e.preventDefault(); shiftPlaySpeed(1); }
 });
 
 /* --- おてほんコース --- */
